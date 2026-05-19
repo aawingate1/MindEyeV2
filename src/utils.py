@@ -204,8 +204,53 @@ def count_params(model):
     return trainable
     
 def check_loss(loss):
-    if loss.isnan().any():
-        raise ValueError('NaN loss')
+    """Return False if loss contains non-finite values, True otherwise."""
+    if not torch.isfinite(loss).all():
+        return False
+    return True
+
+
+def has_nan_grad(model):
+    """Return True if any parameter has NaN gradient (use after backward)."""
+    for p in model.parameters():
+        if p.grad is not None and torch.isnan(p.grad).any():
+            return True
+    return False
+
+
+def is_finite_tensor(x):
+    """True when all entries in x are finite."""
+    return bool(torch.isfinite(x).all().item())
+
+
+def compact_tensor_stats(x):
+    """Compact numeric summary for debugging unstable tensors."""
+    y = x.detach().float()
+    flat = y.reshape(-1)
+    finite_mask = torch.isfinite(flat)
+    finite_frac = float(finite_mask.float().mean().item()) if flat.numel() > 0 else 1.0
+
+    if finite_mask.any():
+        z = flat[finite_mask]
+        min_val = float(z.min().item())
+        max_val = float(z.max().item())
+        mean_val = float(z.mean().item())
+        norm_val = float(torch.linalg.norm(z).item())
+    else:
+        min_val = float("nan")
+        max_val = float("nan")
+        mean_val = float("nan")
+        norm_val = float("nan")
+
+    return {
+        "shape": tuple(x.shape),
+        "dtype": str(x.dtype),
+        "finite_frac": finite_frac,
+        "min": min_val,
+        "max": max_val,
+        "mean": mean_val,
+        "norm": norm_val,
+    }
 
 def cosine_anneal(start, end, steps):
     return end + (start - end)/2 * (1 + torch.cos(torch.pi*torch.arange(steps)/(steps-1)))
