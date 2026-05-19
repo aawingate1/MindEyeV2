@@ -35,6 +35,6 @@ bwrap \
   /codex \
   --cd /workspace \
   --add-dir /src \
-  --sandbox workspace-write \
+  --sandbox danger-full-access \
   --ask-for-approval on-request \
   "$@"

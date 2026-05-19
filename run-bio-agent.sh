@@ -31,6 +31,6 @@ bwrap \
   --setenv PATH /usr/local/bin:/usr/bin:/bin \
   /codex \
   --cd /workspace \
-  --sandbox workspace-write \
+  --sandbox danger-full-access \
   --ask-for-approval on-request \
   "$@"
