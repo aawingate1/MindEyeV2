@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -159,8 +160,8 @@ def git_auto_push(cycle_id: int, remote: str, branch: str, dry_run: bool = False
 
 
 def discussion_agreed() -> bool:
-    tail = read(ROOT / "strategizing-chat.md")[-5000:].upper()
-    return "AGREE:" in tail and "DISAGREE:" not in tail.rsplit("AGREE:", 1)[-1]
+    markers = re.findall(r"(?im)^\s*(AGREE|DISAGREE)\s*:", read(ROOT / "strategizing-chat.md"))
+    return bool(markers) and markers[-1].upper() == "AGREE"
 
 
 def cycle(args: argparse.Namespace, state: dict) -> None:
