@@ -5,8 +5,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="$REPO_DIR/orchestrator-agent"
 SRC_DIR="$REPO_DIR/src"
 CODEX_BIN="/scratch/gpfs/KNORMAN/aw1907/tools/bin/codex"
-
-mkdir -p "$AGENT_DIR/.codex-home"
+CODEX_HOME_DIR="${CODEX_HOME_DIR:-/home/aw1907/.codex}"
 
 bwrap \
   --die-with-parent \
@@ -24,13 +23,14 @@ bwrap \
   --ro-bind /run/munge /run/munge \
   --ro-bind /var/run/munge /var/run/munge \
   --ro-bind "$CODEX_BIN" /codex \
+  --bind "$CODEX_HOME_DIR" /codex-home \
   --ro-bind "$REPO_DIR/plan.md" /plan.md \
   --bind "$REPO_DIR/progress.md" /progress.md \
   --bind "$AGENT_DIR" /workspace \
   --bind "$SRC_DIR" /src \
   --chdir /workspace \
   --setenv HOME /workspace \
-  --setenv CODEX_HOME /workspace/.codex-home \
+  --setenv CODEX_HOME /codex-home \
   --setenv PATH /usr/local/bin:/usr/bin:/bin \
   /codex \
   --cd /workspace \
