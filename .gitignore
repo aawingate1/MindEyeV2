@@ -174,6 +174,15 @@ cython_debug/
 bio-agent/.codex-home/
 cs-agent/.codex-home/
 orchestrator-agent/.codex-home/
+bio-agent/.agents/
+cs-agent/.agents/
+orchestrator-agent/.agents/
+bio-agent/.codex/
+cs-agent/.codex/
+orchestrator-agent/.codex/
+bio-agent/.git/
+cs-agent/.git/
+orchestrator-agent/.git/
 **/.codex-home/auth.json
 **/.codex-home/config.toml
 bio-agent/myresearch/
