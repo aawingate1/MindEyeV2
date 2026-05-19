@@ -162,3 +162,47 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Autonomous agent supervisor runtime state and logs
+.agent-controller/
+.agent-controller/telegram.env
+.agent-controller/*.env
+.agent-controller/*token*
+.agent-controller/*secret*
+
+# Autonomous agent private runtime state
+bio-agent/.codex-home/
+cs-agent/.codex-home/
+orchestrator-agent/.codex-home/
+**/.codex-home/auth.json
+**/.codex-home/config.toml
+bio-agent/myresearch/
+cs-agent/myresearch/
+orchestrator-agent/myresearch/
+plan.md
+strategizing-chat.md
+
+# Generic local secrets
+*.pem
+*.key
+*.token
+*.secret
+secrets/
+
+# Editor swap files
+*.swp
+*.swo
+
+# Local datasets, checkpoints, generated caches, and large artifacts
+src/cache/
+src/evals/
+src/fmri/
+src/wandb_offline/
+src/wds/
+src/wds_3way/
+src/*.ckpt
+src/*.hdf5
+src/*.npy
+src/*.pt
+src/*.pth
+src/*.safetensors
