@@ -85,8 +85,6 @@ def run_agent(name: str, prompt: str, timeout_s: int, dry_run: bool = False) -> 
     cmd = [
         str(AGENTS[name]),
         "--search",
-        "--ask-for-approval",
-        "never",
         "exec",
         "--skip-git-repo-check",
         "-",
