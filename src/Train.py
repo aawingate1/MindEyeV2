@@ -12,6 +12,7 @@ import json
 import argparse
 import numpy as np
 import math
+import copy
 from einops import rearrange
 import time
 import random
@@ -210,6 +211,22 @@ parser.add_argument(
 parser.add_argument(
     "--max_lr",type=float,default=3e-4,
 )
+parser.add_argument(
+    "--reliability_mode", type=str, default="none", choices=["none", "soft_weight", "topk_mask"],
+    help="Reliability-aware voxel input mode. Defaults to none to preserve baseline behavior.",
+)
+parser.add_argument(
+    "--reliability_topk", type=int, default=0,
+    help="Number of voxels to keep for reliability_mode=topk_mask. 0 keeps the top half.",
+)
+parser.add_argument(
+    "--adapter_prior_weight", type=float, default=0.0,
+    help="L2 drift penalty weight for the subject ridge adapter/projection.",
+)
+parser.add_argument(
+    "--adapter_prior_type", type=str, default="weights", choices=["weights", "outputs"],
+    help="Whether to regularize ridge adapter weights or ridge adapter outputs toward initialization.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -277,6 +294,67 @@ train_data = {}
 train_dl = {}
 num_voxels = {}
 voxels = {}
+reliability_inputs = {}
+reliability_summaries = {}
+
+def build_reliability_input(betas, mode, topk):
+    """Builds a deterministic fallback reliability proxy when NCSNR metadata is unavailable."""
+    if mode == "none":
+        return None, {
+            "mode": mode,
+            "source": "disabled",
+            "num_voxels": int(betas.shape[-1]),
+            "active_voxels": int(betas.shape[-1]),
+        }
+
+    # Fallback proxy: voxelwise response variance across available training betas.
+    # This is not NCSNR; it is logged as a proxy so results are interpreted accordingly.
+    reliability = torch.std(betas.float(), dim=0)
+    reliability = torch.nan_to_num(reliability, nan=0.0, posinf=0.0, neginf=0.0)
+    reliability = torch.clamp(reliability, min=0.0)
+    if float(reliability.max()) == 0.0:
+        reliability = torch.ones_like(reliability)
+
+    num_vox = int(reliability.numel())
+    active_voxels = num_vox
+    if mode == "soft_weight":
+        weights = reliability / torch.clamp(reliability.mean(), min=1e-6)
+        weights = torch.clamp(weights, 0.25, 4.0).to(data_type).reshape(1, 1, -1)
+        transform = weights
+    elif mode == "topk_mask":
+        active_voxels = int(topk) if int(topk) > 0 else max(1, num_vox // 2)
+        active_voxels = min(max(1, active_voxels), num_vox)
+        keep_idx = torch.topk(reliability, k=active_voxels).indices
+        mask = torch.zeros_like(reliability, dtype=data_type)
+        mask[keep_idx] = 1
+        transform = mask.reshape(1, 1, -1)
+    else:
+        raise ValueError(f"Unknown reliability_mode: {mode}")
+
+    quantiles = torch.quantile(reliability, torch.tensor([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]))
+    summary = {
+        "mode": mode,
+        "source": "voxelwise_train_beta_std_proxy_no_ncsnr_found",
+        "num_voxels": num_vox,
+        "active_voxels": active_voxels,
+        "mean": float(reliability.mean()),
+        "std": float(reliability.std()),
+        "min": float(quantiles[0]),
+        "p10": float(quantiles[1]),
+        "p25": float(quantiles[2]),
+        "median": float(quantiles[3]),
+        "p75": float(quantiles[4]),
+        "p90": float(quantiles[5]),
+        "max": float(quantiles[6]),
+    }
+    return transform, summary
+
+def apply_reliability(voxel, subj_key):
+    transform = reliability_inputs.get(subj_key)
+    if transform is None:
+        return voxel
+    return voxel * transform.to(voxel.device, dtype=voxel.dtype)
+
 for s in subj_list:
     print(f"Training with {num_sessions} sessions")
     if multi_subject:
@@ -298,9 +376,17 @@ for s in subj_list:
     num_voxels_list.append(betas[0].shape[-1])
     num_voxels[f'subj0{s}'] = betas[0].shape[-1]
     voxels[f'subj0{s}'] = betas
+    reliability_inputs[f'subj0{s}'], reliability_summaries[f'subj0{s}'] = build_reliability_input(
+        betas, reliability_mode, reliability_topk)
+    print(f"reliability summary for subj0{s}: {reliability_summaries[f'subj0{s}']}")
     print(f"num_voxels for subj0{s}: {num_voxels[f'subj0{s}']}")
 
 print("Loaded all subj train dls and betas!\n")
+
+if accelerator.is_main_process and ckpt_saving:
+    with open(os.path.join(outdir, "reliability_summary.json"), "w") as f:
+        json.dump(reliability_summaries, f, indent=2, sort_keys=True)
+    print(f"Saved reliability summary to {os.path.join(outdir, 'reliability_summary.json')}")
 
 # Validate only on one subject
 if multi_subject: 
@@ -596,6 +682,10 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "blur_scale": blur_scale,
       "use_image_aug": use_image_aug,
       "max_lr": max_lr,
+      "reliability_mode": reliability_mode,
+      "reliability_topk": reliability_topk,
+      "adapter_prior_weight": adapter_prior_weight,
+      "adapter_prior_type": adapter_prior_type,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -639,6 +729,16 @@ torch.cuda.empty_cache()
 if multisubject_ckpt is not None:
     load_ckpt("last",outdir=multisubject_ckpt,load_lr=False,load_optimizer=False,load_epoch=False,strict=False,multisubj_loading=True)
 
+adapter_prior_state = None
+adapter_prior_ridge = None
+if adapter_prior_weight > 0:
+    if adapter_prior_type == "weights":
+        adapter_prior_state = {n: p.detach().clone() for n, p in model.ridge.named_parameters() if p.requires_grad}
+    elif adapter_prior_type == "outputs":
+        adapter_prior_ridge = copy.deepcopy(model.ridge).eval()
+        adapter_prior_ridge.requires_grad_(False)
+    print(f"Initialized adapter prior: type={adapter_prior_type}, weight={adapter_prior_weight}")
+
 
 # In[19]:
 
@@ -647,6 +747,10 @@ train_dls = [train_dl[f'subj0{s}'] for s in subj_list]
 
 model, optimizer, *train_dls, lr_scheduler = accelerator.prepare(model, optimizer, *train_dls, lr_scheduler)
 # leaving out test_dl since we will only have local_rank 0 device do evals
+if adapter_prior_state is not None:
+    adapter_prior_state = {n: p.to(device) for n, p in adapter_prior_state.items()}
+if adapter_prior_ridge is not None:
+    adapter_prior_ridge = adapter_prior_ridge.to(device)
 
 
 # In[20]:
@@ -679,6 +783,7 @@ for epoch in progress_bar:
 
     loss_prior_total = 0.
     test_loss_prior_total = 0.
+    loss_adapter_prior_total = 0.
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -706,6 +811,7 @@ for epoch in progress_bar:
                 voxel_sorted_idx = voxel_idx[image_sorted_idx]
                 voxel0 = voxels[f'subj0{subj_list[s]}'][voxel_sorted_idx]
                 voxel0 = torch.Tensor(voxel0).unsqueeze(1)
+                voxel0 = apply_reliability(voxel0, f'subj0{subj_list[s]}')
 
                 if epoch < int(mixup_pct * num_epochs):
                     voxel0, perm, betas, select = utils.mixco(voxel0)
@@ -744,6 +850,26 @@ for epoch in progress_bar:
 
             voxel_ridge_list = [model.ridge(voxel_list[si],si) for si,s in enumerate(subj_list)]
             voxel_ridge = torch.cat(voxel_ridge_list, dim=0)
+
+            if adapter_prior_weight > 0:
+                if adapter_prior_type == "weights":
+                    ridge_module = accelerator.unwrap_model(model).ridge
+                    loss_adapter_prior = 0.
+                    adapter_prior_terms = 0
+                    for n, p in ridge_module.named_parameters():
+                        if n in adapter_prior_state:
+                            loss_adapter_prior = loss_adapter_prior + torch.mean((p - adapter_prior_state[n].to(p.device, dtype=p.dtype)) ** 2)
+                            adapter_prior_terms += 1
+                    loss_adapter_prior = loss_adapter_prior / max(1, adapter_prior_terms)
+                elif adapter_prior_type == "outputs":
+                    with torch.no_grad():
+                        prior_outputs = [adapter_prior_ridge(voxel_list[si], si) for si, s in enumerate(subj_list)]
+                        prior_outputs = torch.cat(prior_outputs, dim=0)
+                    loss_adapter_prior = mse(voxel_ridge, prior_outputs)
+                else:
+                    raise ValueError(f"Unknown adapter_prior_type: {adapter_prior_type}")
+                loss_adapter_prior_total += loss_adapter_prior.item()
+                loss += loss_adapter_prior * adapter_prior_weight
 
             backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
 
@@ -839,6 +965,7 @@ for epoch in progress_bar:
                 ## Average same-image repeats ##
                 if test_image is None:
                     voxel = voxels[f'subj0{subj}'][behav[:,0,5].cpu().long()].unsqueeze(1)
+                    voxel = apply_reliability(voxel, f'subj0{subj}')
 
                     image = behav[:,0,0].cpu().long()
 
@@ -938,6 +1065,7 @@ for epoch in progress_bar:
                 "test/recon_mse": test_recon_mse / (test_i + 1),
                 "train/loss_prior": loss_prior_total / (train_i + 1),
                 "test/loss_prior": test_loss_prior_total / (test_i + 1),
+                "train/loss_adapter_prior": loss_adapter_prior_total / (train_i + 1),
                 }
 
             # if finished training, save jpg recons if they exist
@@ -985,4 +1113,3 @@ plt.plot(losses)
 plt.show()
 plt.plot(test_losses)
 plt.show()
-
