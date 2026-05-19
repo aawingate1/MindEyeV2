@@ -159,8 +159,17 @@ def git_auto_push(cycle_id: int, remote: str, branch: str, dry_run: bool = False
     append(log_path, f"[{now()}] cycle {cycle_id}: pushed HEAD to {remote}/{branch}\n")
 
 
-def discussion_agreed() -> bool:
-    markers = re.findall(r"(?im)^\s*(AGREE|DISAGREE)\s*:", read(ROOT / "strategizing-chat.md"))
+def discussion_agreed(cycle_id: int) -> bool:
+    chat = read(ROOT / "strategizing-chat.md")
+    cycle_header = re.compile(rf"(?im)^##\s*Cycle\s+{cycle_id}\b")
+    matches = list(cycle_header.finditer(chat))
+    if not matches:
+        return False
+    cycle_text = chat[matches[0].start():]
+    next_cycle = re.search(rf"(?im)^##\s*Cycle\s+(?!{cycle_id}\b)\d+\b", cycle_text[len(matches[0].group(0)):])
+    if next_cycle:
+        cycle_text = cycle_text[: len(matches[0].group(0)) + next_cycle.start()]
+    markers = re.findall(r"(?im)^\s*(AGREE|DISAGREE)\s*:", cycle_text)
     return bool(markers) and markers[-1].upper() == "AGREE"
 
 
@@ -174,7 +183,7 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
     for turn in range(1, args.max_turns + 1):
         run_agent("bio", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run)
         run_agent("cs", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run)
-        if discussion_agreed():
+        if discussion_agreed(cycle_id):
             break
 
     run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /plan.md.", args.agent_timeout_s, args.dry_run)
