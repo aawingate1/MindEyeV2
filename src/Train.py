@@ -244,6 +244,18 @@ parser.add_argument(
     help="Optional deterministic cached train-shard validation fraction. 0 disables validation.",
 )
 parser.add_argument(
+    "--heldout_val_sessions", type=int, default=0,
+    help="Number of train-session tar shards to reserve only for cached validation. 0 uses the original train-shard cache.",
+)
+parser.add_argument(
+    "--heldout_val_start_session", type=int, default=-1,
+    help="First train-session tar shard for held-out validation. -1 starts immediately after num_sessions.",
+)
+parser.add_argument(
+    "--heldout_val_max_samples", type=int, default=300,
+    help="Maximum unique image/voxel pairs to cache from held-out validation shards.",
+)
+parser.add_argument(
     "--early_stop_patience", type=int, default=0,
     help="Stop after this many non-improving validation epochs. 0 disables early stopping.",
 )
@@ -467,16 +479,41 @@ print(f"Loaded test dl for subj{subj}!\n")
 val_cache = None
 
 def build_val_cache():
-    if val_fraction <= 0:
+    if val_fraction <= 0 and heldout_val_sessions <= 0:
         return None
     if multi_subject:
         print("val_fraction is enabled only for the active evaluation subject cache; multi_subject validation is skipped.")
         return None
 
-    val_samples = int(round(750 * num_sessions * val_fraction))
-    val_samples = min(300, max(batch_size, val_samples))
-    val_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
-    print(f"Building deterministic validation cache from {val_url} with up to {val_samples} samples")
+    if heldout_val_sessions > 0:
+        val_start = num_sessions if heldout_val_start_session < 0 else heldout_val_start_session
+        val_end = val_start + heldout_val_sessions - 1
+        if val_start < num_sessions:
+            raise ValueError(
+                "heldout_val_start_session overlaps training sessions: "
+                f"start={val_start}, num_sessions={num_sessions}"
+            )
+        missing = [
+            f"{data_path}/wds/subj0{subj}/train/{session_i}.tar"
+            for session_i in range(val_start, val_end + 1)
+            if not os.path.exists(f"{data_path}/wds/subj0{subj}/train/{session_i}.tar")
+        ]
+        if missing:
+            raise FileNotFoundError(f"held-out validation shard(s) missing: {missing}")
+        val_url = f"{data_path}/wds/subj0{subj}/train/" + "{" + f"{val_start}..{val_end}" + "}.tar"
+        source_sessions = heldout_val_sessions
+        val_source = "heldout_train_sessions"
+        val_fraction_for_count = val_fraction if val_fraction > 0 else 1.0
+        val_samples = int(round(750 * source_sessions * val_fraction_for_count))
+        val_samples = min(heldout_val_max_samples, max(batch_size, val_samples))
+    else:
+        val_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
+        source_sessions = num_sessions
+        val_source = "train_shard_cache"
+        val_samples = int(round(750 * source_sessions * val_fraction))
+        val_samples = min(300, max(batch_size, val_samples))
+
+    print(f"Building deterministic validation cache source={val_source} from {val_url} with up to {val_samples} samples")
     val_data = wds.WebDataset(val_url, resampled=False, nodesplitter=my_split_by_node)\
                         .shuffle(750, initial=750, rng=random.Random(seed + 1000))\
                         .decode("torch")\
@@ -507,8 +544,10 @@ def build_val_cache():
     cache = {
         "image": torch.stack(val_images).float(),
         "voxel": torch.stack(val_voxels).to(data_type),
+        "source": val_source,
+        "url": val_url,
     }
-    print(f"Validation cache ready: {len(val_images)} unique image/voxel pairs")
+    print(f"Validation cache ready: source={val_source} n={len(val_images)} unique image/voxel pairs")
     return cache
 
 
@@ -935,6 +974,9 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "alignment_lora_alpha": alignment_lora_alpha,
       "alignment_lora_dropout": alignment_lora_dropout,
       "val_fraction": val_fraction,
+      "heldout_val_sessions": heldout_val_sessions,
+      "heldout_val_start_session": heldout_val_start_session,
+      "heldout_val_max_samples": heldout_val_max_samples,
       "early_stop_patience": early_stop_patience,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
@@ -1462,6 +1504,15 @@ for epoch in progress_bar:
             val_logs = eval_cached_pairs(val_cache, "val")
             logs.update(val_logs)
             logs.update(probe_diagnostic_logs(val_cache))
+            if val_logs:
+                val_source = val_cache.get("source", "unknown") if val_cache is not None else "unknown"
+                print(
+                    "val_metrics "
+                    f"epoch={epoch + 1} source={val_source} "
+                    f"val/loss={val_logs.get('val/loss', float('nan')):.6g} "
+                    f"val/fwd_pct_correct={val_logs.get('val/fwd_pct_correct', float('nan')):.6g} "
+                    f"val/bwd_pct_correct={val_logs.get('val/bwd_pct_correct', float('nan')):.6g}"
+                )
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):

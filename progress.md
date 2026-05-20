@@ -235,3 +235,73 @@ Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, wit
 - The required pre-grid smoke caught and resolved two diagnostic-only dtype bugs before any long run.
 - The primary result is pending because grid `8497957` has not started. Once it completes, compare final `test/loss`, `test_fwd`, and `test_bwd` against Cycle 4 `baseline_all` (`2.69`, `0.487`, `0.343`) and `adapter_head` (`2.66`, `0.470`, `0.373`).
 - Treat cached validation and fixed-probe diagnostics as explanatory signals only; do not use cached train-shard validation for model selection.
+
+## 2026-05-20 07:13 EDT - Cycle 5 Constrained Alignment Results and Held-Out Validation Pivot
+
+### Plan executed
+- Read `/plan.md` and monitored primary Cycle 5 grid array `8497957`.
+- Checked live state with `squeue -j 8497957` and final accounting with `sacct -j 8497957 --format=JobID,JobName%40,State,ExitCode,Elapsed,MaxRSS,ReqMem -P`.
+- Parsed `/src/slurms/c5_align_grid_8497957_<task>.out` and `.err` for final metrics, optimizer/trainable setup, and fixed-probe diagnostics.
+- Applied the `/plan.md` branch rule after final matched metrics: no balanced constrained-alignment win, so pivoted toward true excluded validation infrastructure.
+- Added default-off held-out validation flags in `/src/Train.py`:
+  - `--heldout_val_sessions`, default `0`;
+  - `--heldout_val_start_session`, default `-1`, which starts immediately after the training session range;
+  - `--heldout_val_max_samples`, default `300`.
+- Held-out validation now builds its cache from train-session tar shards not included in `num_sessions`, checks for overlap/missing shards, records the cache source, and prints parseable `val_metrics` lines.
+- Added `/src/accel_cycle5_heldout_val_smoke.slurm` for a 1-hour, 2-epoch smoke using train session `0` and held-out validation session `1`.
+
+### Job states
+- Grid `8497957` completed cleanly for all six tasks with `ExitCode=0:0`.
+- Elapsed times:
+  - `baseline_all` task 0: `00:47:01`
+  - `adapter_head` task 1: `00:46:57`
+  - `adapter_head_headlr_0.1` task 2: `00:46:52`
+  - `adapter_head_headlr_0.03` task 3: `00:48:06`
+  - `alignment_lora_r4` task 4: `00:38:59`
+  - `alignment_lora_r8` task 5: `00:40:11`
+- Batch MaxRSS was about `21.6-21.8 GB`, under the requested `64G`.
+- The held-out validation smoke `8499318` completed cleanly in `00:02:31`, `ExitCode=0:0`, MaxRSS `21626688K`, under the requested `32G`.
+
+### Final matched metrics
+
+| Condition | Task | Trainable params | Final test/loss | test_fwd | test_bwd | train/loss | train_fwd | train_bwd | Cached val |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| baseline_all | 0 | 469,462,680 | 2.70 | 0.477 | 0.350 | 0.000211 | 1.000 | 1.000 | Built but not parseable in grid logs |
+| adapter_head | 1 | 461,057,664 | 2.65 | 0.483 | 0.333 | 0.000202 | 1.000 | 1.000 | Built but not parseable in grid logs |
+| adapter_head_headlr_0.1 | 2 | 461,057,664 | 3.99 | 0.0567 | 0.233 | 0.00228 | 1.000 | 1.000 | Built but not parseable in grid logs |
+| adapter_head_headlr_0.03 | 3 | 461,057,664 | 4.42 | 0.0367 | 0.193 | 0.00626 | 1.000 | 1.000 | Built but not parseable in grid logs |
+| alignment_lora_r4 | 4 | 16,112,640 | 5.76 | 0.0467 | 0.00333 | 0.109 | 1.000 | 1.000 | Built but not parseable in grid logs |
+| alignment_lora_r8 | 5 | 16,120,832 | 5.74 | 0.0133 | 0.00333 | 0.105 | 1.000 | 1.000 | Built but not parseable in grid logs |
+
+### Alignment diagnostics
+- `baseline_all`: final ridge/aligned norm `91`, effective rank `38.6`, drift MSE `6.66`; final `clip_proj` norm `448`, effective rank `42.3`, drift MSE `0.510`.
+- `adapter_head`: final ridge/aligned norm `91.9`, effective rank `38.4`, drift MSE `6.83`; final `clip_proj` norm `440`, effective rank `42.1`, drift MSE `0.499`.
+- `adapter_head_headlr_0.1`: final ridge/aligned norm `95.5`, effective rank `38.7`, drift MSE `7.99`; final `clip_proj` norm `216`, effective rank `60.8`, drift MSE `0.197`. The shrunken `clip_proj` norm coincides with severe forward-retrieval collapse.
+- `adapter_head_headlr_0.03`: final ridge/aligned norm `73.0`, effective rank `50.0`, drift MSE `4.73`; final `clip_proj` norm `204`, effective rank `66.3`, drift MSE `0.197`. Retrieval also collapsed.
+- `alignment_lora_r4`: final ridge/aligned norm `109`, effective rank `68.5`, drift MSE `11.7`; final frozen `clip_proj` norm `245`, effective rank `73.0`, drift MSE `0.156`. LoRA finite grad norm ended at `17.3`; nonfinite gradient count was positive in 2 logged updates early, max `0.387`, then returned to `0`.
+- `alignment_lora_r8`: final ridge/aligned norm `55.2`, effective rank `68.2`, drift MSE `3.13`; final frozen `clip_proj` norm `246`, effective rank `73.1`, drift MSE `0.158`. LoRA finite grad norm ended at `75.1`; nonfinite gradient count was positive in 2 logged updates early, max `0.387`, then returned to `0`.
+
+### Conclusions
+- Cycle 5 did not meet the primary success criterion. No condition improved `test_bwd` or loss while keeping `test_fwd` within `0.01` of the in-grid baseline.
+- In-grid `baseline_all` was the strongest balanced condition: `test/loss=2.70`, `test_fwd=0.477`, `test_bwd=0.350`.
+- `adapter_head` slightly improved loss (`2.65` vs `2.70`) and forward retrieval (`0.483` vs `0.477`) but reduced backward retrieval (`0.333` vs `0.350`). This is not a clean improvement over the in-grid baseline and does not retain the Cycle 4 backward gain.
+- Lower head LR was decisively bad in this setup. `headlr_0.1` and `headlr_0.03` both fully memorized training retrieval but collapsed held-out retrieval, especially `test_fwd`.
+- LoRA rank 4/8 behaved like adapter-only: training retrieval reached `1.0`, but new-test retrieval was near chance and loss stayed around `5.7`. Early nonfinite LoRA gradient diagnostics reinforce deprioritizing this exact implementation.
+- Cached train-shard validation was built in the grid and saved `best_val`, but the grid logs did not expose parseable `val/*` metrics. The new explicit `val_metrics` print fixes this for future runs.
+
+### Held-out validation smoke
+- Command: `sbatch /src/accel_cycle5_heldout_val_smoke.slurm`
+- Job ID: `8499318`.
+- Smoke source: trained with `--num_sessions=1`, validating from excluded shard `/wds/subj01/train/{1..1}.tar`.
+- Log confirmation:
+  - `Validation cache ready: source=heldout_train_sessions n=75 unique image/voxel pairs`
+  - Epoch 1 held-out val: `val/loss=4.28962`, `val_fwd=0.106667`, `val_bwd=0.0266667`
+  - Epoch 2 held-out val: `val/loss=3.56854`, `val_fwd=0.186667`, `val_bwd=0.0666667`
+- Final 2-epoch smoke test metrics: `test/loss=4.68`, `test_fwd=0.110`, `test_bwd=0.0367`; train metrics: `train/loss=1.10`, `train_fwd=0.843`, `train_bwd=0.696`.
+
+### Recommended next research questions
+- Stop advancing Cycle 5 differential-head-LR and adapter-only LoRA as primary branches.
+- Use the new excluded-session validation path to measure whether validation from session `1` predicts `new_test` better than the previous train-shard cache.
+- Next compact run should compare `baseline_all` and the previously mixed `adapter_head` with `heldout_val_sessions=1` and parse explicit `val_metrics`; use final new-test metrics for selection, with held-out validation as a diagnostic.
+- If excluded validation tracks new-test behavior, use it to screen reliability/ROI-stratified voxel selection or explicit Procrustes/SRM-style functional alignment from common stimuli.
+- Do not revisit adapter-only, adapter priors, beta-std top-k masking, diffusion-prior tuning, larger decoders, Fourier augmentation, or blurred-CLIP schedules unless a new validation/reliability result justifies it.
