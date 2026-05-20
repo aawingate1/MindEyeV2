@@ -94,3 +94,93 @@ Cycle 3 implementation is in place. Added default-off reliability-aware voxel in
 
 ### Telegram report-ready update
 Cycle 3 grid `8477001` completed cleanly: all 6 tasks finished with exit code `0:0` in ~38 minutes, using ~21.8 GB RSS under the 64 GB request. Matched baseline was `test/loss=2.72`, `test_fwd=0.493`, `test_bwd=0.320`, with full train memorization (`train_fwd=train_bwd=1.0`, train loss ~`2e-4`). Adapter prior did not help: `1e-4`, `1e-3`, and `1e-2` all matched or worsened retrieval, despite nonzero `train/loss_adapter_prior` around `4.24e-6`. Beta-std top-8k masking is not a clean win: it improved `test_bwd` to `0.327` but worsened loss to `2.77` and slightly reduced `test_fwd` to `0.490`. Combined top-8k + `1e-3` prior had the best `test_fwd=0.497` and `test_bwd=0.323`, but loss stayed worse at `2.77`, so this is weak/noisy rather than decisive. Reliability summaries were logged and saved for all runs; top-k runs used the documented fallback `voxelwise_train_beta_std_proxy_no_ncsnr_found` with `active_voxels=8000`, not true NCSNR. Recommendation: do not advance the current adapter-weight prior; do not claim beta-std reliability success; next cycle should pivot toward explicit functional alignment or subject-conditioned/meta-learning. No plots were generated in this cycle.
+
+## 2026-05-20 04:31 EDT - Cycle 3 Capacity-Controlled Functional Alignment Execution
+
+### Plan executed
+- Read `/plan.md` and implemented the prescribed capacity-control path in `/src/Train.py`.
+- Added `--train_scope {all,adapter_only,adapter_head}`. Default `all` preserves flags-off behavior. `adapter_only` freezes all shared modules and trains only `model.ridge`; `adapter_head` trains `model.ridge`, `backbone_linear`, and `clip_proj`.
+- Added parameter logging for total and trainable parameters in stdout, W&B config, and epoch logs (`params/total`, `params/trainable`).
+- Added output-space alignment regularization:
+  - `--alignment_output_prior_weight`, default `0.0`.
+  - `--alignment_output_prior_type {distill,moments}`, default `distill`.
+  - The prior snapshots a frozen initialized ridge adapter and penalizes drift after the adapter, before the shared mapper. `distill` uses full-output MSE; `moments` matches mean, variance, and feature norm.
+  - Logged `train/loss_alignment_output_prior`.
+- Added optional deterministic cached train-shard validation with `--val_fraction`; default `0.0` keeps baseline behavior unchanged. When enabled, it builds a fixed unique image/voxel cache, logs `val/loss`, `val/fwd_pct_correct`, and `val/bwd_pct_correct`, and saves `best_val.pth` on improvement.
+- Added optional validation patience via `--early_stop_patience`; default `0` disables early stopping.
+- Added Slurm scripts:
+  - `/src/accel_cycle4_smoke.slurm`: 1-hour adapter-only smoke with output prior and validation enabled.
+  - `/src/accel_cycle4_grid.slurm`: six-task compact grid for baseline-all, adapter-only, adapter-only prior `1e-3`, adapter-only prior `1e-2`, adapter-head, and adapter-head with early stopping.
+
+### Verification and jobs
+- Syntax check passed: `/src/fmri/bin/python -m py_compile /src/Train.py`.
+- First smoke submission `8494843` failed immediately with `State=FAILED`, `ExitCode=0:53`, `Elapsed=00:00:00`. This was a Slurm setup/log-path failure, not Python startup; no stdout/stderr logs were created.
+- Patched Cycle 4 Slurm scripts to match the successful Cycle 3 pattern: absolute scratch log paths and `SRC_DIR=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`.
+- Resubmitted required 1-hour smoke as job `8494926`.
+  - Final state: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:03:19`, batch `MaxRSS=21626748K`, under requested `64G`.
+  - Smoke confirmed new code on compute: `train_scope=adapter_only total_params=469,462,680 trainable_params=16,102,400`.
+  - Validation cache built: `75` unique image/voxel train-shard pairs.
+  - Alignment prior initialized: `type=distill`, `weight=0.001`.
+  - `best_val` and `last` checkpoints were saved successfully.
+  - Final 2-epoch smoke metrics: `test/loss=5.79`, `test_fwd=0.0233`, `test_bwd=0.00333`, `train/loss=2.34`, `train_fwd=0.801`, `train_bwd=0.406`, `val/loss=2.59`, `val_fwd=0.933`, `val_bwd=0.560`, `train/loss_alignment_output_prior=0.697`.
+- After smoke passed, submitted the six-task primary grid:
+  - Command: `sbatch /src/accel_cycle4_grid.slurm`
+  - Job array: `8495064`
+  - Current state at last check: tasks `0-5` pending for resources on `gpu`, each with `02:00:00` time limit and `64G` memory.
+
+### Conclusions
+- The capacity-control implementation is wired and smoke-tested. Adapter-only reduces trainable capacity by about `29x` (`469.5M` total to `16.1M` trainable).
+- Output prior loss is nonzero and validation/checkpoint plumbing works.
+- Smoke retrieval is expectedly weak after only 2 epochs, but train/val curves show the training path is active and not frozen accidentally.
+- The cached validation set is a deterministic diagnostic from the train shard, not a true held-out test substitute; primary comparison remains final test loss/retrieval from the standard new-test evaluation.
+- No plots were generated.
+
+### Recommended next research questions
+- When grid `8495064` completes, compare each condition against the Cycle 3 matched baseline `test/loss=2.72`, `test_fwd=0.493`, `test_bwd=0.320`.
+- Prioritize whether reduced trainable scope closes the train-test gap, even if train retrieval no longer reaches `1.0`.
+- If adapter-only underfits final train metrics, use adapter-head as the next capacity point before expanding to explicit MindAligner-style low-rank transfer.
+
+### Telegram report-ready update
+Implemented the `/plan.md` capacity-control cycle in `/src/Train.py`: added `--train_scope all|adapter_only|adapter_head`, output-space alignment prior flags, trainable/total parameter logging, cached train-shard validation, `best_val` checkpointing, and optional validation patience. Syntax check passed. First smoke `8494843` failed before Python with Slurm `0:53` due log/workdir path setup; patched scripts to the Cycle 3 absolute scratch-log pattern. Resubmitted required 1-hour smoke `8494926`, which completed cleanly in `00:03:19` with exit `0:0` and ~21.6 GB RSS. Smoke confirmed `adapter_only` reduced trainables to `16,102,400` out of `469,462,680` total, built a 75-sample validation cache, initialized `alignment_output_prior type=distill weight=1e-3`, logged nonzero `train/loss_alignment_output_prior=0.697`, and saved both `best_val` and `last` checkpoints. Two-epoch smoke metrics were `test/loss=5.79`, `test_fwd=0.0233`, `test_bwd=0.00333`, `train/loss=2.34`, `train_fwd=0.801`, `train_bwd=0.406`, `val/loss=2.59`, `val_fwd=0.933`, `val_bwd=0.560`. Submitted six-task grid `8495064` for baseline-all, adapter-only, adapter-only prior `1e-3`, adapter-only prior `1e-2`, adapter-head, and adapter-head early-stop; all tasks were pending for GPU resources at last check. No plots generated yet.
+
+## 2026-05-20 05:35 EDT - Cycle 3 Capacity-Controlled Grid Results
+
+### Job states
+- Grid `8495064` completed cleanly for all six tasks with `ExitCode=0:0`.
+- Elapsed times: task 0 `00:47:29`, task 1 `00:38:48`, task 2 `00:38:44`, task 3 `00:39:05`, task 4 `00:46:17`, task 5 `00:07:53`.
+- Batch MaxRSS was about `21.77 GB` for all tasks, below requested `64G`.
+- Task 5 (`adapter_head_earlystop`) stopped after 21 epochs with `best_val_loss=0.0440092459321022`.
+
+### Final matched metrics
+
+| Condition | Task | Trainable params | Final test/loss | test_fwd | test_bwd | train/loss | train_fwd | train_bwd | val/loss | val_fwd | val_bwd | align prior loss |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline_all | 0 | 469,462,680 | 2.69 | 0.487 | 0.343 | 0.000202 | 1.000 | 1.000 | 0.0000591 | 1.000 | 1.000 | 0 |
+| adapter_only | 1 | 16,102,400 | 5.77 | 0.060 | 0.00667 | 0.106 | 1.000 | 1.000 | 0.0977 | 1.000 | 1.000 | 0 |
+| adapter_only_prior_1e-3 | 2 | 16,102,400 | 5.77 | 0.0533 | 0.00667 | 0.107 | 1.000 | 1.000 | 0.0957 | 1.000 | 1.000 | 2.37 |
+| adapter_only_prior_1e-2 | 3 | 16,102,400 | 5.81 | 0.0267 | 0.00333 | 0.112 | 1.000 | 1.000 | 0.0846 | 1.000 | 1.000 | 1.34 |
+| adapter_head | 4 | 461,057,664 | 2.66 | 0.470 | 0.373 | 0.000197 | 1.000 | 1.000 | 0.0000701 | 1.000 | 1.000 | 0 |
+| adapter_head_earlystop final | 5 | 461,057,664 | 3.78 | 0.243 | 0.187 | 0.293 | 0.695 | 0.754 | 0.0598 | 1.000 | 0.987 | 0 |
+
+### Best-validation checkpoint-time metrics
+- Because validation is logged every epoch, the epoch where `best_val` was saved can be read from the logs even though no separate eval-only reload script exists yet.
+- For tasks 0-4, best validation occurred at the final epoch, so checkpoint-time metrics match the final metrics above.
+- For task 5, the best-validation epoch had `val/loss=0.044`, `test/loss=3.71`, `test_fwd=0.310`, `test_bwd=0.157`, `train/loss=0.333`, `train_fwd=0.707`, `train_bwd=0.761`.
+
+### Conclusions
+- Reduced train scope did not meet success criteria.
+- `adapter_only` and both adapter-only output-prior runs badly underfit the shared mapping path for test retrieval: `test_fwd <= 0.060`, `test_bwd <= 0.00667`, and `test/loss >= 5.77`, despite reaching train retrieval of `1.0`.
+- Output-space alignment prior did not rescue adapter-only. Stronger prior `1e-2` worsened both forward and backward retrieval.
+- `adapter_head` produced the best backward retrieval in this grid: `test_bwd=0.373`, a `+0.053` gain over the Cycle 3 matched baseline `0.320`, and improved loss modestly from `2.72` to `2.66`; however, it reduced forward retrieval from `0.493` to `0.470`.
+- The new baseline-all run with validation plumbing was close but not identical to the prior matched baseline: `test/loss=2.69`, `test_fwd=0.487`, `test_bwd=0.343`. This suggests validation/cache code did not break training, but exact comparability has small run-to-run or code-path drift.
+- Cached train-shard validation saturates to near-perfect retrieval for non-earlystop runs, so it is not a useful early-stopping proxy in the current form. Task 5 stopped early and reduced overfitting but also had poor test retrieval.
+- The strongest actionable signal is adapter-head improving `test_bwd` and loss while hurting `test_fwd`; this is not a clean win but is more promising than adapter-only.
+
+### Recommended next research questions
+- Do not advance adapter-only as-is.
+- For adapter-head, run a focused sweep across smaller head scopes or learning rates to recover forward retrieval while retaining the backward/loss gain. A lower LR for `clip_proj`/`backbone_linear` relative to ridge is the most direct next test.
+- Replace the cached validation proxy with a true held-out shard or a deterministic split that is excluded from training; current validation saturates and does not predict new-test retrieval.
+- If trainable-scope tuning remains mixed, pivot to an explicit low-rank functional alignment layer before the frozen shared stack rather than training the full projection head.
+
+### Telegram report-ready update
+Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, with runtime `7:53` to `47:29` and ~21.8 GB RSS under 64 GB. Baseline-all with validation plumbing got `test/loss=2.69`, `test_fwd=0.487`, `test_bwd=0.343` versus previous matched baseline `2.72/0.493/0.320`. Adapter-only reduced trainables to `16.1M` but failed on test retrieval: no-prior `test/loss=5.77`, `test_fwd=0.060`, `test_bwd=0.0067`; prior `1e-3` was `5.77/0.053/0.0067`; prior `1e-2` was `5.81/0.0267/0.0033`. Adapter-head used `461.1M` trainables and was mixed: `test/loss=2.66`, `test_fwd=0.470`, `test_bwd=0.373`, so it improved loss and backward retrieval over Cycle 3 but hurt forward retrieval. Adapter-head early-stop stopped after 21 epochs (`best_val_loss=0.044`) but final test was poor: `test/loss=3.78`, `test_fwd=0.243`, `test_bwd=0.187`; checkpoint-time best-val metrics were `test/loss=3.71`, `test_fwd=0.310`, `test_bwd=0.157`. Cached train-shard validation saturated to near-perfect retrieval and is not a useful early-stop proxy. Recommendation: do not advance adapter-only; next test should refine adapter-head with differential/lower head LR or a smaller low-rank alignment layer before the frozen shared stack. No plots generated.

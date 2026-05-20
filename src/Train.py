@@ -227,6 +227,26 @@ parser.add_argument(
     "--adapter_prior_type", type=str, default="weights", choices=["weights", "outputs"],
     help="Whether to regularize ridge adapter weights or ridge adapter outputs toward initialization.",
 )
+parser.add_argument(
+    "--train_scope", type=str, default="all", choices=["all", "adapter_only", "adapter_head"],
+    help="Which parameters to train. all preserves baseline behavior; adapter scopes freeze shared capacity.",
+)
+parser.add_argument(
+    "--alignment_output_prior_weight", type=float, default=0.0,
+    help="Penalty weight for keeping adapter outputs aligned to their initialized frozen outputs.",
+)
+parser.add_argument(
+    "--alignment_output_prior_type", type=str, default="distill", choices=["distill", "moments"],
+    help="Output alignment prior type after the ridge adapter and before the shared mapper.",
+)
+parser.add_argument(
+    "--val_fraction", type=float, default=0.0,
+    help="Optional deterministic cached train-shard validation fraction. 0 disables validation.",
+)
+parser.add_argument(
+    "--early_stop_patience", type=int, default=0,
+    help="Stop after this many non-improving validation epochs. 0 disables early stopping.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -424,6 +444,53 @@ test_data = wds.WebDataset(test_url,resampled=False,nodesplitter=my_split_by_nod
 test_dl = torch.utils.data.DataLoader(test_data, batch_size=num_test, shuffle=False, drop_last=True, pin_memory=True)
 print(f"Loaded test dl for subj{subj}!\n")
 
+val_cache = None
+
+def build_val_cache():
+    if val_fraction <= 0:
+        return None
+    if multi_subject:
+        print("val_fraction is enabled only for the active evaluation subject cache; multi_subject validation is skipped.")
+        return None
+
+    val_samples = int(round(750 * num_sessions * val_fraction))
+    val_samples = min(300, max(batch_size, val_samples))
+    val_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
+    print(f"Building deterministic validation cache from {val_url} with up to {val_samples} samples")
+    val_data = wds.WebDataset(val_url, resampled=False, nodesplitter=my_split_by_node)\
+                        .shuffle(750, initial=750, rng=random.Random(seed + 1000))\
+                        .decode("torch")\
+                        .rename(behav="behav.npy", past_behav="past_behav.npy", future_behav="future_behav.npy", olds_behav="olds_behav.npy")\
+                        .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav"])
+    val_dl = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+    val_images, val_voxels = [], []
+    seen_images = set()
+    for behav0, past_behav0, future_behav0, old_behav0 in val_dl:
+        image_idx = behav0[:,0,0].cpu().long().numpy()
+        voxel_idx = behav0[:,0,5].cpu().long().numpy()
+        for image_i, voxel_i in zip(image_idx, voxel_idx):
+            image_i = int(image_i)
+            if image_i in seen_images:
+                continue
+            seen_images.add(image_i)
+            val_images.append(torch.tensor(images[image_i], dtype=data_type))
+            voxel = voxels[f'subj0{subj}'][int(voxel_i)].unsqueeze(0).unsqueeze(0)
+            val_voxels.append(apply_reliability(voxel, f'subj0{subj}').squeeze(0))
+            if len(val_images) >= val_samples:
+                break
+        if len(val_images) >= val_samples:
+            break
+
+    if len(val_images) < 2:
+        print("Validation cache skipped because fewer than 2 unique samples were found.")
+        return None
+    cache = {
+        "image": torch.stack(val_images).float(),
+        "voxel": torch.stack(val_voxels).to(data_type),
+    }
+    print(f"Validation cache ready: {len(val_images)} unique image/voxel pairs")
+    return cache
+
 
 # In[8]:
 
@@ -593,18 +660,50 @@ if use_prior:
 # In[15]:
 
 
+def apply_train_scope(scope):
+    for p in model.parameters():
+        p.requires_grad = True
+    if scope == "all":
+        pass
+    elif scope == "adapter_only":
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.ridge.parameters():
+            p.requires_grad = True
+    elif scope == "adapter_head":
+        for p in model.parameters():
+            p.requires_grad = False
+        for p in model.ridge.parameters():
+            p.requires_grad = True
+        for p in model.backbone.backbone_linear.parameters():
+            p.requires_grad = True
+        for p in model.backbone.clip_proj.parameters():
+            p.requires_grad = True
+    else:
+        raise ValueError(f"Unknown train_scope: {scope}")
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"train_scope={scope} total_params={total_params:,} trainable_params={trainable_params:,}")
+    return total_params, trainable_params
+
+total_params, trainable_params = apply_train_scope(train_scope)
+
 no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
 
 opt_grouped_parameters = [
-    {'params': [p for n, p in model.ridge.named_parameters()], 'weight_decay': 1e-2},
-    {'params': [p for n, p in model.backbone.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
-    {'params': [p for n, p in model.backbone.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+    {'params': [p for n, p in model.ridge.named_parameters() if p.requires_grad], 'weight_decay': 1e-2},
+    {'params': [p for n, p in model.backbone.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
+    {'params': [p for n, p in model.backbone.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
 ]
 if use_prior:
     opt_grouped_parameters.extend([
-        {'params': [p for n, p in model.diffusion_prior.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
-        {'params': [p for n, p in model.diffusion_prior.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        {'params': [p for n, p in model.diffusion_prior.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
+        {'params': [p for n, p in model.diffusion_prior.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ])
+opt_grouped_parameters = [group for group in opt_grouped_parameters if len(group['params']) > 0]
+if len(opt_grouped_parameters) == 0:
+    raise ValueError(f"train_scope={train_scope} left no trainable parameters")
 
 optimizer = torch.optim.AdamW(opt_grouped_parameters, lr=max_lr)
 
@@ -658,6 +757,7 @@ def load_ckpt(tag,load_lr=True,load_optimizer=True,load_epoch=True,strict=True,o
 
 print("\nDone with model preparations!")
 num_params = utils.count_params(model)
+val_cache = build_val_cache()
 
 
 # # Weights and Biases
@@ -677,6 +777,8 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "num_epochs": num_epochs,
       "num_sessions": num_sessions,
       "num_params": num_params,
+      "total_params": total_params,
+      "trainable_params": trainable_params,
       "clip_scale": clip_scale,
       "prior_scale": prior_scale,
       "blur_scale": blur_scale,
@@ -686,6 +788,11 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "reliability_topk": reliability_topk,
       "adapter_prior_weight": adapter_prior_weight,
       "adapter_prior_type": adapter_prior_type,
+      "train_scope": train_scope,
+      "alignment_output_prior_weight": alignment_output_prior_weight,
+      "alignment_output_prior_type": alignment_output_prior_type,
+      "val_fraction": val_fraction,
+      "early_stop_patience": early_stop_patience,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -719,6 +826,8 @@ else:
 epoch = 0
 losses, test_losses, lrs = [], [], []
 best_test_loss = 1e9
+best_val_loss = 1e9
+epochs_since_best_val = 0
 torch.cuda.empty_cache()
 
 
@@ -739,6 +848,12 @@ if adapter_prior_weight > 0:
         adapter_prior_ridge.requires_grad_(False)
     print(f"Initialized adapter prior: type={adapter_prior_type}, weight={adapter_prior_weight}")
 
+alignment_output_prior_ridge = None
+if alignment_output_prior_weight > 0:
+    alignment_output_prior_ridge = copy.deepcopy(model.ridge).eval()
+    alignment_output_prior_ridge.requires_grad_(False)
+    print(f"Initialized alignment output prior: type={alignment_output_prior_type}, weight={alignment_output_prior_weight}")
+
 
 # In[19]:
 
@@ -751,6 +866,8 @@ if adapter_prior_state is not None:
     adapter_prior_state = {n: p.to(device) for n, p in adapter_prior_state.items()}
 if adapter_prior_ridge is not None:
     adapter_prior_ridge = adapter_prior_ridge.to(device)
+if alignment_output_prior_ridge is not None:
+    alignment_output_prior_ridge = alignment_output_prior_ridge.to(device)
 
 
 # In[20]:
@@ -762,6 +879,47 @@ test_image, test_voxel = None, None
 mse = nn.MSELoss()
 l1 = nn.L1Loss()
 soft_loss_temps = utils.cosine_anneal(0.004, 0.0075, num_epochs - int(mixup_pct * num_epochs))
+
+def alignment_output_prior_loss(current_outputs, reference_outputs):
+    if alignment_output_prior_type == "distill":
+        return mse(current_outputs, reference_outputs)
+    if alignment_output_prior_type == "moments":
+        current_flat = current_outputs.flatten(1).float()
+        reference_flat = reference_outputs.flatten(1).float()
+        current_norm = torch.norm(current_flat, dim=1).mean()
+        reference_norm = torch.norm(reference_flat, dim=1).mean()
+        return (
+            mse(current_flat.mean(dim=0), reference_flat.mean(dim=0)) +
+            mse(current_flat.var(dim=0, unbiased=False), reference_flat.var(dim=0, unbiased=False)) +
+            mse(current_norm, reference_norm)
+        )
+    raise ValueError(f"Unknown alignment_output_prior_type: {alignment_output_prior_type}")
+
+def eval_cached_pairs(cache, split_name):
+    if cache is None:
+        return {}
+    voxel = cache["voxel"].to(device)
+    image = cache["image"].to(device)
+    clip_target = clip_img_embedder(image.float())
+    voxel_ridge = model.ridge(voxel, 0)
+    backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
+    loss = 0.
+    metrics = {}
+    if use_prior:
+        loss_prior, contaminated_prior_out = model.diffusion_prior(text_embed=backbone, image_embed=clip_target)
+        loss = loss + loss_prior * prior_scale
+        metrics[f"{split_name}/loss_prior"] = loss_prior.item()
+    if clip_scale > 0:
+        clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
+        clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
+        loss_clip = utils.soft_clip_loss(clip_voxels_norm, clip_target_norm, temp=.006)
+        loss = loss + loss_clip * clip_scale
+        labels = torch.arange(len(clip_voxels_norm)).to(clip_voxels_norm.device)
+        metrics[f"{split_name}/fwd_pct_correct"] = utils.topk(utils.batchwise_cosine_similarity(clip_voxels_norm, clip_target_norm), labels, k=1).item()
+        metrics[f"{split_name}/bwd_pct_correct"] = utils.topk(utils.batchwise_cosine_similarity(clip_target_norm, clip_voxels_norm), labels, k=1).item()
+        metrics[f"{split_name}/loss_clip_total"] = loss_clip.item()
+    metrics[f"{split_name}/loss"] = loss.item()
+    return metrics
 
 for epoch in progress_bar:
     model.train()
@@ -784,6 +942,7 @@ for epoch in progress_bar:
     loss_prior_total = 0.
     test_loss_prior_total = 0.
     loss_adapter_prior_total = 0.
+    loss_alignment_output_prior_total = 0.
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -870,6 +1029,14 @@ for epoch in progress_bar:
                     raise ValueError(f"Unknown adapter_prior_type: {adapter_prior_type}")
                 loss_adapter_prior_total += loss_adapter_prior.item()
                 loss += loss_adapter_prior * adapter_prior_weight
+
+            if alignment_output_prior_weight > 0:
+                with torch.no_grad():
+                    alignment_reference_outputs = [alignment_output_prior_ridge(voxel_list[si], si) for si, s in enumerate(subj_list)]
+                    alignment_reference_outputs = torch.cat(alignment_reference_outputs, dim=0)
+                loss_alignment_output_prior = alignment_output_prior_loss(voxel_ridge, alignment_reference_outputs)
+                loss_alignment_output_prior_total += loss_alignment_output_prior.item()
+                loss += loss_alignment_output_prior * alignment_output_prior_weight
 
             backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
 
@@ -1066,7 +1233,12 @@ for epoch in progress_bar:
                 "train/loss_prior": loss_prior_total / (train_i + 1),
                 "test/loss_prior": test_loss_prior_total / (test_i + 1),
                 "train/loss_adapter_prior": loss_adapter_prior_total / (train_i + 1),
+                "train/loss_alignment_output_prior": loss_alignment_output_prior_total / (train_i + 1),
+                "params/total": total_params,
+                "params/trainable": trainable_params,
                 }
+            val_logs = eval_cached_pairs(val_cache, "val")
+            logs.update(val_logs)
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):
@@ -1093,6 +1265,14 @@ for epoch in progress_bar:
 
             if wandb_log: wandb.log(logs)
 
+            if ckpt_saving and "val/loss" in logs:
+                if logs["val/loss"] < best_val_loss:
+                    best_val_loss = logs["val/loss"]
+                    epochs_since_best_val = 0
+                    save_ckpt("best_val")
+                else:
+                    epochs_since_best_val += 1
+
     # Save model checkpoint and reconstruct
     if (ckpt_saving) and (epoch % ckpt_interval == 0):
         save_ckpt(f'last')
@@ -1100,6 +1280,9 @@ for epoch in progress_bar:
     # wait for other GPUs to catch up if needed
     accelerator.wait_for_everyone()
     torch.cuda.empty_cache()
+    if early_stop_patience > 0 and val_cache is not None and epochs_since_best_val >= early_stop_patience:
+        print(f"Early stopping after {epoch + 1} epochs; best_val_loss={best_val_loss}")
+        break
 
 print("\n===Finished!===\n")
 if ckpt_saving:
