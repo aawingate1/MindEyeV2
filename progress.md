@@ -588,3 +588,74 @@ Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, wit
 - Because `val_repeat` is strong while `val_novel` remains much weaker, prioritize session response scaling, repeat reliability, and ROI-stratified repeat-derived voxel diagnostics next.
 - A follow-on geometry-preserving relational consistency test is reasonable only as a separate cycle and should use strict rejection rules: improve final `new_test` mean above `0.4265` or at least above the Cycle 7 reference `0.4115`, keep forward retrieval at baseline level, and keep `test_bwd >= 0.323`.
 - Continue excluding Procrustes/SRM alignment, LoRA, adapter-only, lower-head-LR sweeps, adapter priors, beta-std top-k masks, blurred CLIP schedules, Fourier augmentation, diffusion-prior tuning, and larger decoders from this validation cycle.
+
+## 2026-05-20 14:07 EDT - Cycle 9 Voxel Normalization and Repeat Reliability
+
+### Plan executed
+- Read `/plan.md` and kept the model fixed to `baseline_all` / `train_scope=all`.
+- Updated `/src/Train.py` with default-off voxel normalization:
+  - `--voxel_norm_mode none|train_session_zscore|per_session_zscore`
+  - `--voxel_norm_eps`
+  - `none` routes through an identity path.
+  - `train_session_zscore` computes mean/std only from actual train shard voxel indices, then applies them to train, validation, and new-test.
+  - `per_session_zscore` is explicitly logged as diagnostic/target-session: train stats come from train session, validation stats from each validation session, and new-test stats from the new-test split.
+- Added `repeat_reliability_summary.json` creation under each run log directory. It scans only the actual training shard, groups by `behav[:,0,0]` image ID, computes a summary-only voxel repeat-consistency score, adds ROI summaries from `brain_region_masks.hdf5`, and does not feed scores into inputs, masks, losses, or selection.
+- Added parseable normalization and repeat-reliability logging.
+- Added Slurm scripts:
+  - `/src/accel_cycle9_voxnorm_smoke.slurm`
+  - `/src/accel_cycle9_voxnorm_grid.slurm`
+
+### Verification and jobs
+- Syntax checks passed:
+  - `/src/fmri/bin/python -m py_compile /src/Train.py`
+  - `bash -n /src/accel_cycle9_voxnorm_smoke.slurm`
+  - `bash -n /src/accel_cycle9_voxnorm_grid.slurm`
+- Smoke job `8508880` completed: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:04:11`, batch `MaxRSS=21807612K` under requested `32G`.
+  - Confirmed `voxel_norm mode=train_session_zscore statistic_source=actual_training_shards_only`, `train_sample_count=688`, finite fraction `1.0`, no low-variance clamps, no nonfinite replacements.
+  - Confirmed repeat-aware validation: train unique `536`, validation raw `76`, `val_novel=69`, `val_repeat=6`.
+  - Confirmed repeat-reliability artifact write: `repeat_groups=123`, `usable_pairs=181`, finite voxel fraction `1.0`.
+  - Final 2-epoch smoke metrics: `test/loss=5.19`, `test_fwd=0.0833`, `test_bwd=0.0167`, mean `0.0500`; `val_novel/loss=3.73716`, `val_novel_fwd=0.101449`, `val_novel_bwd=0.057971`; `val_repeat/loss=1.67714`, `val_repeat_fwd=0.333333`, `val_repeat_bwd=0.5`.
+- Submitted grid after smoke passed: `sbatch /src/accel_cycle9_voxnorm_grid.slurm` -> array `8509111`.
+- Grid `8509111` completed cleanly:
+  - task 0 `none`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=01:06:48`, batch `MaxRSS=21645608K`.
+  - task 1 `train_session_zscore`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=01:08:38`, batch `MaxRSS=21808712K`.
+  - task 2 `per_session_zscore_diagnostic`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=01:07:10`, batch `MaxRSS=21757256K`.
+- Artifact readback job `8511494` completed in `00:00:01` and printed the saved JSON summaries from scratch.
+
+### Shared validation and reliability counts
+- All grid tasks used train unique IDs `536`, validation raw count `155`, `val_novel=143`, `val_repeat=7`, overlap fraction `0.046667`, session counts `{1: 76, 2: 79}`, bucket counts novel `{1: 69, 2: 74}`, repeat `{1: 6, 2: 1}`.
+- Train repeat summary: min `1`, median `1.0`, max `3`, mean `1.2836`.
+- Validation repeat summary: min `1`, median `1.0`, max `2`, mean `1.0333`.
+- Repeat reliability artifact for all tasks:
+  - repeat groups `123`, usable repeat pairs `181`, finite voxel fraction `1.0`, nonfinite scores `0`, low/zero-support total-variance count `0`, warnings `[]`.
+  - whole-mask quantiles: min `0.3171`, p10 `0.4372`, p25 `0.4746`, median `0.5218`, p75 `0.5840`, p90 `0.6557`, max `0.8670`.
+  - ROI medians: V1 `0.6003`, V2 `0.5712`, V3 `0.5662`, V4 `0.5316`, early_vis `0.5723`, higher_vis `0.5071`, nsd_general `0.5218`.
+  - ROI finite fractions were all `1.0`; no concentration warnings were raised.
+
+### Final matched metrics
+
+| Condition | Norm source | val_novel/loss | val_novel_fwd | val_novel_bwd | Val novel mean | val_repeat/loss | val_repeat_fwd | val_repeat_bwd | test/loss | test_fwd | test_bwd | Test mean | train/loss | train_fwd | train_bwd |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline_all_norm_none | disabled | 2.73114 | 0.342657 | 0.314685 | 0.328671 | 0.533976 | 0.857143 | 0.714286 | 2.74 | 0.473 | 0.293 | 0.383 | 0.000190 | 1.000 | 1.000 |
+| baseline_all_train_session_zscore | train shard only | 2.73192 | 0.426573 | 0.265734 | 0.346154 | 0.530259 | 0.714286 | 1.000000 | 2.89 | 0.423 | 0.283 | 0.353 | 0.000151 | 1.000 | 1.000 |
+| baseline_all_per_session_zscore_diagnostic | target session/split diagnostic | 2.65998 | 0.279720 | 0.307692 | 0.293706 | 0.486760 | 0.714286 | 0.857143 | 2.58 | 0.437 | 0.417 | 0.427 | 0.000197 | 1.000 | 1.000 |
+
+### Best validation epochs
+- `baseline_all_norm_none`: best `val_novel/loss` at epoch 149, `2.73105`, with `val_novel_fwd=0.342657`, `val_novel_bwd=0.314685`.
+- `baseline_all_train_session_zscore`: best `val_novel/loss` at epoch 149, `2.73186`, with `val_novel_fwd=0.426573`, `val_novel_bwd=0.265734`.
+- `baseline_all_per_session_zscore_diagnostic`: best `val_novel/loss` at epoch 150, `2.65998`, with `val_novel_fwd=0.279720`, `val_novel_bwd=0.307692`.
+
+### Conclusions
+- `train_session_zscore` is rejected as a deployable preprocessing candidate. It worsened final new-test loss (`2.89` vs Cycle 8 anchor `2.64`), forward retrieval (`0.423` vs `0.473`), backward retrieval (`0.283` vs `0.380`), and mean retrieval (`0.353` vs `0.4265`).
+- The `none` baseline did not reproduce the Cycle 8 anchor on backward retrieval: `test_fwd=0.473` matched, but `test_bwd=0.293` was far below `0.380`, with loss `2.74` vs `2.64`. Per `/plan.md`, treat this as a rejection flag for Cycle 9 comparability rather than a new anchor.
+- Diagnostic `per_session_zscore` had the best final new-test metrics in this grid (`test/loss=2.58`, `test_bwd=0.417`, mean `0.427`), but it uses target validation/test statistics and is not deployable. It is evidence that target-session scale drift may matter.
+- `val_novel/loss` ranked diagnostic `per_session_zscore` best and agreed with final new-test loss. `val_novel_bwd` ranked `none` best and missed the diagnostic new-test backward win. `val_novel_fwd` ranked `train_session_zscore` best and was again a poor selector.
+- One-session memorization persists for every arm: `train_fwd=train_bwd=1.0`, train loss around `1.5e-4` to `2.0e-4`.
+- The repeat-reliability artifact is usable for future diagnosis: support is nontrivial, all scores finite, and ROI signal is stronger in early visual areas but not collapsed to a single ROI.
+
+### Recommended next research questions
+- Do not advance `train_session_zscore`.
+- Do not promote `per_session_zscore`; use it only as a diagnostic upper-bound suggesting session-scale drift.
+- Before any reliability weighting or masking, rerun or audit the `none` baseline to understand why Cycle 9 failed to reproduce Cycle 8 backward retrieval.
+- If baseline comparability is restored, Cycle 10 should focus on deployable target-session scale estimation rather than architecture or capacity changes.
+- The repeat artifact supports considering a conservative ROI-shrunk reliability intervention later, but only after the baseline reproducibility issue is resolved.

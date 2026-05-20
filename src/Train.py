@@ -222,6 +222,14 @@ parser.add_argument(
     help="Number of voxels to keep for reliability_mode=topk_mask. 0 keeps the top half.",
 )
 parser.add_argument(
+    "--voxel_norm_mode", type=str, default="none", choices=["none", "train_session_zscore", "per_session_zscore"],
+    help="Default-off voxel normalization. per_session_zscore is diagnostic and uses target split/session stats.",
+)
+parser.add_argument(
+    "--voxel_norm_eps", type=float, default=1e-6,
+    help="Minimum std clamp for voxel normalization.",
+)
+parser.add_argument(
     "--adapter_prior_weight", type=float, default=0.0,
     help="L2 drift penalty weight for the subject ridge adapter/projection.",
 )
@@ -362,6 +370,122 @@ num_voxels = {}
 voxels = {}
 reliability_inputs = {}
 reliability_summaries = {}
+voxel_norm_inputs = {}
+voxel_norm_summaries = {}
+
+def collect_voxel_indices_from_sessions(s, start_session, end_session):
+    indices = []
+    for session_i in range(int(start_session), int(end_session) + 1):
+        session_url = f"{data_path}/wds/subj0{s}/train/{session_i}.tar"
+        if not os.path.exists(session_url):
+            continue
+        data = wds.WebDataset(session_url, resampled=False, nodesplitter=my_split_by_node)\
+                    .decode("torch")\
+                    .rename(behav="behav.npy")\
+                    .to_tuple(*["behav"])
+        dl = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+        for (behav0,) in dl:
+            indices.extend(behav0[:,0,5].cpu().long().tolist())
+    return torch.tensor(indices, dtype=torch.long)
+
+def make_voxel_norm_stat(betas, indices, eps, label):
+    if indices.numel() == 0:
+        raise ValueError(f"Cannot build voxel normalization stats for {label}: no voxel indices found")
+    sample = betas[indices].float()
+    mean = sample.mean(dim=0)
+    std_raw = sample.std(dim=0, unbiased=False)
+    finite_before = torch.isfinite(mean) & torch.isfinite(std_raw)
+    low_var = std_raw < eps
+    std = torch.clamp(std_raw, min=eps)
+    nonfinite_replacements = int((~finite_before).sum().item())
+    mean = torch.nan_to_num(mean, nan=0.0, posinf=0.0, neginf=0.0)
+    std = torch.nan_to_num(std, nan=float(eps), posinf=float(eps), neginf=float(eps))
+    finite_after = torch.isfinite(mean) & torch.isfinite(std)
+    return {
+        "mean": mean.reshape(1, 1, -1).to(data_type),
+        "std": std.reshape(1, 1, -1).to(data_type),
+        "summary": {
+            "label": label,
+            "sample_count": int(indices.numel()),
+            "epsilon": float(eps),
+            "finite_voxel_fraction": float(finite_after.float().mean().item()),
+            "low_variance_clamped": int(low_var.sum().item()),
+            "nonfinite_replacements": nonfinite_replacements,
+            "std_min_raw": float(torch.nan_to_num(std_raw, nan=0.0, posinf=0.0, neginf=0.0).min().item()),
+            "std_median_raw": float(torch.nan_to_num(std_raw, nan=0.0, posinf=0.0, neginf=0.0).median().item()),
+            "std_max_raw": float(torch.nan_to_num(std_raw, nan=0.0, posinf=0.0, neginf=0.0).max().item()),
+        },
+    }
+
+def build_voxel_norm_inputs_for_subject(s, betas):
+    subj_key = f"subj0{s}"
+    summary = {
+        "mode": voxel_norm_mode,
+        "epsilon": float(voxel_norm_eps),
+        "statistic_source": "disabled",
+        "diagnostic_target_session": False,
+        "stats": {},
+    }
+    stats = {"mode": voxel_norm_mode, "summary": summary}
+    if voxel_norm_mode == "none":
+        print(f"voxel_norm mode=none subj={subj_key} statistic_source=disabled epsilon={voxel_norm_eps}")
+        return stats
+
+    train_indices = collect_voxel_indices_from_sessions(s, 0, num_sessions - 1)
+    train_stat = make_voxel_norm_stat(betas, train_indices, voxel_norm_eps, "train_sessions_0_to_%d" % (num_sessions - 1))
+    stats["train"] = train_stat
+    summary["stats"]["train"] = train_stat["summary"]
+    if voxel_norm_mode == "train_session_zscore":
+        summary["statistic_source"] = "actual_training_shards_only"
+    elif voxel_norm_mode == "per_session_zscore":
+        summary["statistic_source"] = "per_train_or_eval_session_diagnostic"
+        summary["diagnostic_target_session"] = True
+        stats["sessions"] = {}
+        for session_i in range(0, num_sessions):
+            idx = collect_voxel_indices_from_sessions(s, session_i, session_i)
+            if idx.numel() > 0:
+                stat = make_voxel_norm_stat(betas, idx, voxel_norm_eps, f"train_session_{session_i}")
+                stats["sessions"][int(session_i)] = stat
+                summary["stats"][f"session_{session_i}"] = stat["summary"]
+        if heldout_val_sessions > 0:
+            val_start = num_sessions if heldout_val_start_session < 0 else heldout_val_start_session
+            val_end = val_start + heldout_val_sessions - 1
+            for session_i in range(val_start, val_end + 1):
+                idx = collect_voxel_indices_from_sessions(s, session_i, session_i)
+                if idx.numel() > 0:
+                    stat = make_voxel_norm_stat(betas, idx, voxel_norm_eps, f"validation_session_{session_i}")
+                    stats["sessions"][int(session_i)] = stat
+                    summary["stats"][f"session_{session_i}"] = stat["summary"]
+    print(
+        "voxel_norm "
+        f"mode={voxel_norm_mode} subj={subj_key} statistic_source={summary['statistic_source']} "
+        f"epsilon={voxel_norm_eps} diagnostic_target_session={int(summary['diagnostic_target_session'])} "
+        f"train_sample_count={summary['stats']['train']['sample_count']} "
+        f"finite_voxel_fraction={summary['stats']['train']['finite_voxel_fraction']:.6f} "
+        f"low_variance_clamped={summary['stats']['train']['low_variance_clamped']} "
+        f"nonfinite_replacements={summary['stats']['train']['nonfinite_replacements']}"
+    )
+    return stats
+
+def apply_voxel_norm(voxel, subj_key, session=None, split="train"):
+    stats = voxel_norm_inputs.get(subj_key)
+    if stats is None or stats.get("mode") == "none":
+        return voxel
+    stat = None
+    if stats.get("mode") == "per_session_zscore":
+        if split == "test" and "test" in stats:
+            stat = stats["test"]
+        elif session is not None:
+            stat = stats.get("sessions", {}).get(int(session))
+    if stat is None:
+        stat = stats["train"]
+    mean = stat["mean"].to(voxel.device, dtype=voxel.dtype)
+    std = stat["std"].to(voxel.device, dtype=voxel.dtype)
+    return (voxel - mean) / std
+
+def apply_voxel_preprocess(voxel, subj_key, session=None, split="train"):
+    voxel = apply_voxel_norm(voxel, subj_key, session=session, split=split)
+    return apply_reliability(voxel, subj_key)
 
 def build_reliability_input(betas, mode, topk):
     """Builds a deterministic fallback reliability proxy when NCSNR metadata is unavailable."""
@@ -442,6 +566,8 @@ for s in subj_list:
     num_voxels_list.append(betas[0].shape[-1])
     num_voxels[f'subj0{s}'] = betas[0].shape[-1]
     voxels[f'subj0{s}'] = betas
+    voxel_norm_inputs[f'subj0{s}'] = build_voxel_norm_inputs_for_subject(s, betas)
+    voxel_norm_summaries[f'subj0{s}'] = voxel_norm_inputs[f'subj0{s}']["summary"]
     reliability_inputs[f'subj0{s}'], reliability_summaries[f'subj0{s}'] = build_reliability_input(
         betas, reliability_mode, reliability_topk)
     print(f"reliability summary for subj0{s}: {reliability_summaries[f'subj0{s}']}")
@@ -453,6 +579,9 @@ if accelerator.is_main_process and ckpt_saving:
     with open(os.path.join(outdir, "reliability_summary.json"), "w") as f:
         json.dump(reliability_summaries, f, indent=2, sort_keys=True)
     print(f"Saved reliability summary to {os.path.join(outdir, 'reliability_summary.json')}")
+    with open(os.path.join(outdir, "voxel_norm_summary.json"), "w") as f:
+        json.dump(voxel_norm_summaries, f, indent=2, sort_keys=True)
+    print(f"Saved voxel normalization summary to {os.path.join(outdir, 'voxel_norm_summary.json')}")
 
 # Validate only on one subject
 if multi_subject: 
@@ -489,6 +618,37 @@ test_data = wds.WebDataset(test_url,resampled=False,nodesplitter=my_split_by_nod
                     .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav"])
 test_dl = torch.utils.data.DataLoader(test_data, batch_size=num_test, shuffle=False, drop_last=True, pin_memory=True)
 print(f"Loaded test dl for subj{subj}!\n")
+
+def collect_test_voxel_indices():
+    data = wds.WebDataset(test_url, resampled=False, nodesplitter=my_split_by_node)\
+                .decode("torch")\
+                .rename(behav="behav.npy")\
+                .to_tuple(*["behav"])
+    dl = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+    indices = []
+    for (behav0,) in dl:
+        indices.extend(behav0[:,0,5].cpu().long().tolist())
+    return torch.tensor(indices, dtype=torch.long)
+
+if voxel_norm_mode == "per_session_zscore":
+    subj_key = f"subj0{subj}"
+    test_indices_for_norm = collect_test_voxel_indices()
+    test_stat = make_voxel_norm_stat(voxels[subj_key], test_indices_for_norm, voxel_norm_eps, "new_test_split_diagnostic")
+    voxel_norm_inputs[subj_key]["test"] = test_stat
+    voxel_norm_inputs[subj_key]["summary"]["stats"]["test"] = test_stat["summary"]
+    voxel_norm_summaries[subj_key] = voxel_norm_inputs[subj_key]["summary"]
+    print(
+        "voxel_norm "
+        f"mode=per_session_zscore subj={subj_key} statistic_source=new_test_split_diagnostic "
+        f"epsilon={voxel_norm_eps} diagnostic_target_session=1 "
+        f"test_sample_count={test_stat['summary']['sample_count']} "
+        f"finite_voxel_fraction={test_stat['summary']['finite_voxel_fraction']:.6f} "
+        f"low_variance_clamped={test_stat['summary']['low_variance_clamped']} "
+        f"nonfinite_replacements={test_stat['summary']['nonfinite_replacements']}"
+    )
+    if accelerator.is_main_process and ckpt_saving:
+        with open(os.path.join(outdir, "voxel_norm_summary.json"), "w") as f:
+            json.dump(voxel_norm_summaries, f, indent=2, sort_keys=True)
 
 val_cache = None
 
@@ -674,7 +834,7 @@ def build_val_cache():
                 val_kept_ids.add(image_id)
                 image_tensor = torch.tensor(images[image_i], dtype=data_type)
                 voxel = voxels[f'subj0{subj}'][int(voxel_i)].unsqueeze(0).unsqueeze(0)
-                voxel_tensor = apply_reliability(voxel, f'subj0{subj}').squeeze(0)
+                voxel_tensor = apply_voxel_preprocess(voxel, f'subj0{subj}', session=session_i, split="val").squeeze(0)
                 val_images.append(image_tensor)
                 val_voxels.append(voxel_tensor)
                 val_sessions.append(int(session_i))
@@ -789,6 +949,136 @@ def build_val_cache():
     if repeat_aware_val:
         print(f"Repeat-aware validation buckets: val_novel={len(novel_images)} val_repeat={len(repeat_images)}")
     return cache
+
+def quantile_summary(values):
+    arr = torch.as_tensor(values).float()
+    finite = arr[torch.isfinite(arr)]
+    if finite.numel() == 0:
+        return {"min": None, "p10": None, "p25": None, "median": None, "p75": None, "p90": None, "max": None}
+    qs = torch.quantile(finite, torch.tensor([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]))
+    return {
+        "min": float(qs[0]), "p10": float(qs[1]), "p25": float(qs[2]),
+        "median": float(qs[3]), "p75": float(qs[4]), "p90": float(qs[5]), "max": float(qs[6]),
+    }
+
+def load_roi_masks(mask_path, num_vox):
+    roi_masks = {}
+    if not os.path.exists(mask_path):
+        return roi_masks, f"missing mask file: {mask_path}"
+    try:
+        with h5py.File(mask_path, "r") as f:
+            def visit(name, obj):
+                if not isinstance(obj, h5py.Dataset):
+                    return
+                arr = np.asarray(obj)
+                if arr.size != num_vox:
+                    return
+                mask = torch.as_tensor(arr.reshape(-1)).bool()
+                if int(mask.sum().item()) > 0:
+                    roi_masks[name] = mask
+            f.visititems(visit)
+        if not roi_masks:
+            return roi_masks, "no dataset in mask file matched voxel count"
+        return roi_masks, None
+    except Exception as exc:
+        return roi_masks, repr(exc)
+
+def build_repeat_reliability_artifact():
+    if multi_subject:
+        print("repeat_reliability skipped for multi_subject run")
+        return None
+    subj_key = f"subj0{subj}"
+    resolved_source = resolve_val_id_source(val_id_source)
+    train_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
+    data = wds.WebDataset(train_url, resampled=False, nodesplitter=my_split_by_node)\
+                .decode("torch")\
+                .rename(behav="behav.npy")\
+                .to_tuple(*["behav", "__key__"])
+    dl = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+    groups = defaultdict(list)
+    sample_count = 0
+    for behav0, key0 in dl:
+        voxel_idx = behav0[:,0,5].cpu().long().numpy()
+        for sample_i, voxel_i in enumerate(voxel_idx):
+            image_id, _ = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_source)
+            groups[image_id].append(int(voxel_i))
+            sample_count += 1
+
+    repeat_groups = {k: v for k, v in groups.items() if len(v) >= 2}
+    usable_pair_count = int(sum((len(v) * (len(v) - 1)) // 2 for v in repeat_groups.values()))
+    warnings = []
+    num_vox = int(num_voxels[subj_key])
+    reliability = torch.full((num_vox,), float("nan"))
+    finite_voxel_fraction = 0.0
+    nonfinite_count = num_vox
+    zero_support_count = num_vox
+    if len(repeat_groups) < 5 or usable_pair_count < 10:
+        warnings.append("repeat support is weak; scores are insufficient for weighting or masking")
+    if repeat_groups:
+        repeat_indices = [idx for indices in repeat_groups.values() for idx in indices]
+        repeat_betas = voxels[subj_key][repeat_indices].float()
+        total_var = repeat_betas.var(dim=0, unbiased=False)
+        within_vars = []
+        weights = []
+        for indices in repeat_groups.values():
+            group_betas = voxels[subj_key][indices].float()
+            within_vars.append(group_betas.var(dim=0, unbiased=False))
+            weights.append(float(len(indices)))
+        within_var = torch.stack(within_vars).mul(torch.tensor(weights).reshape(-1, 1)).sum(dim=0) / max(1.0, float(sum(weights)))
+        reliability = 1.0 - within_var / torch.clamp(total_var, min=float(voxel_norm_eps))
+        reliability = torch.nan_to_num(reliability, nan=float("nan"), posinf=float("nan"), neginf=float("nan"))
+        finite = torch.isfinite(reliability)
+        finite_voxel_fraction = float(finite.float().mean().item())
+        nonfinite_count = int((~finite).sum().item())
+        zero_support_count = int((total_var <= float(voxel_norm_eps)).sum().item())
+
+    roi_summaries = {}
+    roi_warning = None
+    roi_masks, roi_warning = load_roi_masks(f"{data_path}/brain_region_masks.hdf5", num_vox)
+    finite_scores = reliability[torch.isfinite(reliability)]
+    global_median = float(finite_scores.median().item()) if finite_scores.numel() > 0 else None
+    for roi_name, mask in roi_masks.items():
+        scores = reliability[mask]
+        finite = torch.isfinite(scores)
+        roi_summaries[roi_name] = {
+            "voxel_count": int(mask.sum().item()),
+            "finite_score_fraction": float(finite.float().mean().item()) if scores.numel() else 0.0,
+            "quantiles": quantile_summary(scores),
+            "concentration_warning": bool(global_median is not None and finite.sum().item() > 0 and float(scores[finite].median().item()) > global_median + 0.25),
+        }
+    if roi_warning:
+        warnings.append(f"ROI summaries unavailable or incomplete: {roi_warning}")
+
+    repeat_count_values = [len(v) for v in groups.values()]
+    summary = {
+        "subject": int(subj),
+        "train_url": train_url,
+        "id_source": resolved_source,
+        "train_sample_count": int(sample_count),
+        "train_unique_image_count": int(len(groups)),
+        "repeat_group_count": int(len(repeat_groups)),
+        "usable_repeat_pair_count": usable_pair_count,
+        "repeat_count_summary": repeat_count_summary(Counter({k: v for k, v in enumerate(repeat_count_values)})),
+        "finite_voxel_fraction": finite_voxel_fraction,
+        "nonfinite_score_count": nonfinite_count,
+        "zero_support_or_low_total_variance_count": zero_support_count,
+        "score_quantiles": quantile_summary(reliability),
+        "roi_summaries": roi_summaries,
+        "warnings": warnings,
+        "applied_to_training": False,
+    }
+    if accelerator.is_main_process and ckpt_saving:
+        path = os.path.join(outdir, "repeat_reliability_summary.json")
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=2, sort_keys=True)
+        print(
+            "repeat_reliability "
+            f"path={path} repeat_groups={summary['repeat_group_count']} "
+            f"usable_pairs={summary['usable_repeat_pair_count']} "
+            f"finite_voxel_fraction={summary['finite_voxel_fraction']:.6f} "
+            f"nonfinite={summary['nonfinite_score_count']} warnings={len(warnings)}"
+        )
+    return summary
 
 
 # In[8]:
@@ -1175,6 +1465,7 @@ def load_ckpt(tag,load_lr=True,load_optimizer=True,load_epoch=True,strict=True,o
 print("\nDone with model preparations!")
 num_params = utils.count_params(model)
 val_cache = build_val_cache()
+repeat_reliability_summary = build_repeat_reliability_artifact()
 
 
 # # Weights and Biases
@@ -1201,6 +1492,8 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "blur_scale": blur_scale,
       "use_image_aug": use_image_aug,
       "max_lr": max_lr,
+      "voxel_norm_mode": voxel_norm_mode,
+      "voxel_norm_eps": voxel_norm_eps,
       "reliability_mode": reliability_mode,
       "reliability_topk": reliability_topk,
       "adapter_prior_weight": adapter_prior_weight,
@@ -1497,7 +1790,7 @@ for epoch in progress_bar:
                 voxel_sorted_idx = voxel_idx[image_sorted_idx]
                 voxel0 = voxels[f'subj0{subj_list[s]}'][voxel_sorted_idx]
                 voxel0 = torch.Tensor(voxel0).unsqueeze(1)
-                voxel0 = apply_reliability(voxel0, f'subj0{subj_list[s]}')
+                voxel0 = apply_voxel_preprocess(voxel0, f'subj0{subj_list[s]}', split="train")
 
                 if epoch < int(mixup_pct * num_epochs):
                     voxel0, perm, betas, select = utils.mixco(voxel0)
@@ -1674,7 +1967,7 @@ for epoch in progress_bar:
                 ## Average same-image repeats ##
                 if test_image is None:
                     voxel = voxels[f'subj0{subj}'][behav[:,0,5].cpu().long()].unsqueeze(1)
-                    voxel = apply_reliability(voxel, f'subj0{subj}')
+                    voxel = apply_voxel_preprocess(voxel, f'subj0{subj}', split="test")
 
                     image = behav[:,0,0].cpu().long()
 
@@ -1762,6 +2055,10 @@ for epoch in progress_bar:
                 "train/bwd_pct_correct": bwd_percent_correct / (train_i + 1),
                 "test/test_fwd_pct_correct": test_fwd_percent_correct / (test_i + 1),
                 "test/test_bwd_pct_correct": test_bwd_percent_correct / (test_i + 1),
+                "test/mean_retrieval": (
+                    (test_fwd_percent_correct / (test_i + 1)) +
+                    (test_bwd_percent_correct / (test_i + 1))
+                ) / 2.0,
                 "train/loss_clip_total": loss_clip_total / (train_i + 1),
                 "train/loss_blurry_total": loss_blurry_total / (train_i + 1),
                 "train/loss_blurry_cont_total": loss_blurry_cont_total / (train_i + 1),
