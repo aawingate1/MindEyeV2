@@ -14,6 +14,7 @@ import argparse
 import numpy as np
 import math
 import copy
+from collections import Counter, defaultdict
 from einops import rearrange
 import time
 import random
@@ -259,6 +260,10 @@ parser.add_argument(
 parser.add_argument(
     "--strict_val_image_disjoint", action=argparse.BooleanOptionalAction, default=False,
     help="When enabled, filter held-out validation samples whose image IDs occur in the training shards and audit overlap.",
+)
+parser.add_argument(
+    "--repeat_aware_val", action=argparse.BooleanOptionalAction, default=False,
+    help="When enabled, keep train-overlap validation images in a separate val_repeat bucket and select on val_novel.",
 )
 parser.add_argument(
     "--val_id_source", type=str, default="auto", choices=["auto", "key", "metadata", "image_hash"],
@@ -513,9 +518,31 @@ def make_image_id(behav_row, key, source):
         return f"image_hash:{digest}", resolved
     raise ValueError(f"Unknown val_id_source: {source}")
 
+def infer_session_from_key(key):
+    key = normalize_sample_key(key)
+    digits = "".join(ch for ch in key if ch.isdigit())
+    if digits:
+        return int(digits) // 750
+    return -1
+
+def repeat_count_summary(counts):
+    values = list(counts.values())
+    if not values:
+        return {"min": 0, "median": 0.0, "max": 0, "mean": 0.0}
+    arr = np.asarray(values, dtype=np.float32)
+    return {
+        "min": int(arr.min()),
+        "median": float(np.median(arr)),
+        "max": int(arr.max()),
+        "mean": float(arr.mean()),
+    }
+
+def compact_counter(counter):
+    return {str(k): int(v) for k, v in sorted(counter.items(), key=lambda item: str(item[0]))}
+
 def collect_train_image_ids(source):
-    if not strict_val_image_disjoint:
-        return set(), resolve_val_id_source(source)
+    if not strict_val_image_disjoint and not repeat_aware_val:
+        return set(), {}, {}, [], resolve_val_id_source(source)
     resolved_source = resolve_val_id_source(source)
     train_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
     print(f"Collecting train image IDs for validation audit source={resolved_source} from {train_url}")
@@ -525,12 +552,25 @@ def collect_train_image_ids(source):
                         .to_tuple(*["behav", "__key__"])
     id_dl = torch.utils.data.DataLoader(id_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
     train_ids = set()
+    train_counts = Counter()
+    train_session_counts = Counter()
+    train_sample_rows = []
     for behav0, key0 in id_dl:
         for sample_i in range(len(behav0)):
             image_id, _ = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_source)
             train_ids.add(image_id)
+            train_counts[image_id] += 1
+            session_i = infer_session_from_key(key0[sample_i])
+            train_session_counts[session_i] += 1
+            if len(train_sample_rows) < 25:
+                train_sample_rows.append({
+                    "key": normalize_sample_key(key0[sample_i]),
+                    "session": int(session_i),
+                    "image_id": image_id,
+                    "train_repeat_count_so_far": int(train_counts[image_id]),
+                })
     print(f"Collected train image IDs for validation audit: source={resolved_source} train_unique={len(train_ids)}")
-    return train_ids, resolved_source
+    return train_ids, dict(train_counts), dict(train_session_counts), train_sample_rows, resolved_source
 
 def build_val_cache():
     if val_fraction <= 0 and heldout_val_sessions <= 0:
@@ -567,42 +607,91 @@ def build_val_cache():
         val_samples = int(round(750 * source_sessions * val_fraction))
         val_samples = min(300, max(batch_size, val_samples))
 
-    train_image_ids, resolved_id_source = collect_train_image_ids(val_id_source)
+    train_image_ids, train_counts, train_session_counts, train_sample_rows, resolved_id_source = collect_train_image_ids(val_id_source)
     print(f"Building deterministic validation cache source={val_source} from {val_url} with up to {val_samples} samples")
-    val_data = wds.WebDataset(val_url, resampled=False, nodesplitter=my_split_by_node)\
-                        .shuffle(750, initial=750, rng=random.Random(seed + 1000))\
-                        .decode("torch")\
-                        .rename(behav="behav.npy", past_behav="past_behav.npy", future_behav="future_behav.npy", olds_behav="olds_behav.npy")\
-                        .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav", "__key__"])
-    val_dl = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
-    val_images, val_voxels = [], []
-    seen_images = set()
+    val_images, val_voxels, val_sessions = [], [], []
+    novel_images, novel_voxels, novel_sessions = [], [], []
+    repeat_images, repeat_voxels, repeat_sessions = [], [], []
+    seen_images_by_bucket = defaultdict(set)
     val_candidate_ids = set()
     val_kept_ids = set()
+    val_counts = Counter()
+    val_session_counts = Counter()
+    bucket_session_counts = {"novel": Counter(), "repeat": Counter(), "dropped": Counter()}
     val_before = 0
     dropped_overlap = 0
-    for behav0, past_behav0, future_behav0, old_behav0, key0 in val_dl:
-        image_idx = behav0[:,0,0].cpu().long().numpy()
-        voxel_idx = behav0[:,0,5].cpu().long().numpy()
-        for sample_i, (image_i, voxel_i) in enumerate(zip(image_idx, voxel_idx)):
-            image_i = int(image_i)
-            if image_i in seen_images:
-                continue
-            seen_images.add(image_i)
-            image_id, resolved_id_source = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_id_source)
-            val_candidate_ids.add(image_id)
-            val_before += 1
-            if strict_val_image_disjoint and image_id in train_image_ids:
-                dropped_overlap += 1
-                continue
-            val_kept_ids.add(image_id)
-            val_images.append(torch.tensor(images[image_i], dtype=data_type))
-            voxel = voxels[f'subj0{subj}'][int(voxel_i)].unsqueeze(0).unsqueeze(0)
-            val_voxels.append(apply_reliability(voxel, f'subj0{subj}').squeeze(0))
-            if len(val_images) >= val_samples:
-                break
+    manifest_rows = []
+
+    if heldout_val_sessions > 0:
+        session_iter = list(range(val_start, val_end + 1))
+    else:
+        session_iter = list(range(0, num_sessions))
+    per_session_target = max(batch_size, int(math.ceil(val_samples / max(1, len(session_iter)))))
+
+    for session_i in session_iter:
         if len(val_images) >= val_samples:
             break
+        session_url = f"{data_path}/wds/subj0{subj}/train/{session_i}.tar"
+        val_data = wds.WebDataset(session_url, resampled=False, nodesplitter=my_split_by_node)\
+                            .shuffle(750, initial=750, rng=random.Random(seed + 1000 + int(session_i)))\
+                            .decode("torch")\
+                            .rename(behav="behav.npy", past_behav="past_behav.npy", future_behav="future_behav.npy", olds_behav="olds_behav.npy")\
+                            .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav", "__key__"])
+        val_dl = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+        session_kept = 0
+        for behav0, past_behav0, future_behav0, old_behav0, key0 in val_dl:
+            image_idx = behav0[:,0,0].cpu().long().numpy()
+            voxel_idx = behav0[:,0,5].cpu().long().numpy()
+            for sample_i, (image_i, voxel_i) in enumerate(zip(image_idx, voxel_idx)):
+                image_i = int(image_i)
+                image_id, resolved_id_source = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_id_source)
+                val_candidate_ids.add(image_id)
+                val_counts[image_id] += 1
+                val_session_counts[int(session_i)] += 1
+                val_before += 1
+                appears_in_train = image_id in train_image_ids
+                bucket = "repeat" if appears_in_train else "novel"
+                train_repeat_count = int(train_counts.get(image_id, 0))
+                val_repeat_count = int(val_counts[image_id])
+                dropped = bool(strict_val_image_disjoint and appears_in_train and not repeat_aware_val)
+                if len(manifest_rows) < 100:
+                    manifest_rows.append({
+                        "key": normalize_sample_key(key0[sample_i]),
+                        "session": int(session_i),
+                        "image_id": image_id,
+                        "appears_in_train": bool(appears_in_train),
+                        "train_repeat_count": train_repeat_count,
+                        "validation_repeat_count_so_far": val_repeat_count,
+                        "bucket": "dropped_overlap" if dropped else bucket,
+                    })
+                if dropped:
+                    dropped_overlap += 1
+                    bucket_session_counts["dropped"][int(session_i)] += 1
+                    continue
+                if image_id in seen_images_by_bucket[bucket]:
+                    continue
+                seen_images_by_bucket[bucket].add(image_id)
+                val_kept_ids.add(image_id)
+                image_tensor = torch.tensor(images[image_i], dtype=data_type)
+                voxel = voxels[f'subj0{subj}'][int(voxel_i)].unsqueeze(0).unsqueeze(0)
+                voxel_tensor = apply_reliability(voxel, f'subj0{subj}').squeeze(0)
+                val_images.append(image_tensor)
+                val_voxels.append(voxel_tensor)
+                val_sessions.append(int(session_i))
+                if bucket == "novel":
+                    novel_images.append(image_tensor)
+                    novel_voxels.append(voxel_tensor)
+                    novel_sessions.append(int(session_i))
+                else:
+                    repeat_images.append(image_tensor)
+                    repeat_voxels.append(voxel_tensor)
+                    repeat_sessions.append(int(session_i))
+                bucket_session_counts[bucket][int(session_i)] += 1
+                session_kept += 1
+                if len(val_images) >= val_samples or session_kept >= per_session_target:
+                    break
+            if len(val_images) >= val_samples or session_kept >= per_session_target:
+                break
 
     overlap_ids = val_candidate_ids.intersection(train_image_ids)
     remaining_overlap_ids = val_kept_ids.intersection(train_image_ids)
@@ -614,11 +703,23 @@ def build_val_cache():
         f"overlap_unique={len(overlap_ids)} overlap_fraction={overlap_fraction:.6f} "
         f"dropped_overlap={dropped_overlap} strict={1 if strict_val_image_disjoint else 0}"
     )
-    if strict_val_image_disjoint and len(remaining_overlap_ids) > 0:
+    if strict_val_image_disjoint and not repeat_aware_val and len(remaining_overlap_ids) > 0:
         raise RuntimeError(
             "strict_val_image_disjoint failed: validation still contains "
             f"{len(remaining_overlap_ids)} train-overlap image IDs after filtering"
         )
+    print(
+        "val_repeat_manifest "
+        f"id_source={resolved_id_source} train_unique={len(train_image_ids)} "
+        f"val_raw={val_before} val_novel={len(novel_images)} val_repeat={len(repeat_images)} "
+        f"overlap_fraction={overlap_fraction:.6f} "
+        f"train_repeat_summary={repeat_count_summary(train_counts)} "
+        f"val_repeat_summary={repeat_count_summary(val_counts)} "
+        f"session_counts={compact_counter(val_session_counts)} "
+        f"bucket_session_counts={{'novel': {compact_counter(bucket_session_counts['novel'])}, "
+        f"'repeat': {compact_counter(bucket_session_counts['repeat'])}, "
+        f"'dropped': {compact_counter(bucket_session_counts['dropped'])}}}"
+    )
 
     summary = {
         "subject": int(subj),
@@ -630,33 +731,63 @@ def build_val_cache():
         },
         "id_source": resolved_id_source,
         "strict": bool(strict_val_image_disjoint),
+        "repeat_aware": bool(repeat_aware_val),
         "train_unique": int(len(train_image_ids)),
+        "train_session_counts": compact_counter(train_session_counts),
+        "train_repeat_summary": repeat_count_summary(train_counts),
         "val_before": int(val_before),
         "val_after": int(len(val_images)),
+        "val_novel": int(len(novel_images)),
+        "val_repeat": int(len(repeat_images)),
+        "val_session_counts": compact_counter(val_session_counts),
+        "val_bucket_session_counts": {
+            "novel": compact_counter(bucket_session_counts["novel"]),
+            "repeat": compact_counter(bucket_session_counts["repeat"]),
+            "dropped": compact_counter(bucket_session_counts["dropped"]),
+        },
+        "val_repeat_summary": repeat_count_summary(val_counts),
         "overlap_unique": int(len(overlap_ids)),
         "overlap_fraction": overlap_fraction,
         "dropped_overlap": int(dropped_overlap),
         "remaining_overlap_unique": int(len(remaining_overlap_ids)),
         "validation_source": val_source,
         "validation_url": val_url,
+        "train_manifest_sample": train_sample_rows,
+        "validation_manifest_sample": manifest_rows,
     }
     if accelerator.is_main_process and ckpt_saving:
-        summary_path = os.path.join(outdir, "val_image_overlap_summary.json")
+        summary_path = os.path.join(outdir, "val_repeat_manifest_summary.json" if repeat_aware_val else "val_image_overlap_summary.json")
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2, sort_keys=True)
-        print(f"Saved validation image-overlap summary to {summary_path}")
+        print(f"Saved validation repeat-aware manifest summary to {summary_path}")
 
     if len(val_images) < 2:
         print("Validation cache skipped because fewer than 2 unique samples were found.")
         return None
-    cache = {
-        "image": torch.stack(val_images).float(),
-        "voxel": torch.stack(val_voxels).to(data_type),
-        "source": val_source,
-        "url": val_url,
-        "image_overlap_summary": summary,
-    }
+    def make_cache(image_list, voxel_list, session_list, bucket_name):
+        if len(image_list) < 2:
+            return None
+        return {
+            "image": torch.stack(image_list).float(),
+            "voxel": torch.stack(voxel_list).to(data_type),
+            "session": torch.tensor(session_list, dtype=torch.long),
+            "source": val_source,
+            "bucket": bucket_name,
+            "url": val_url,
+            "image_overlap_summary": summary,
+        }
+    cache = make_cache(val_images, val_voxels, val_sessions, "combined")
+    if repeat_aware_val:
+        cache = {
+            "is_repeat_aware": True,
+            "combined": cache,
+            "novel": make_cache(novel_images, novel_voxels, novel_sessions, "novel"),
+            "repeat": make_cache(repeat_images, repeat_voxels, repeat_sessions, "repeat"),
+            "image_overlap_summary": summary,
+        }
     print(f"Validation cache ready: source={val_source} n={len(val_images)} unique image/voxel pairs")
+    if repeat_aware_val:
+        print(f"Repeat-aware validation buckets: val_novel={len(novel_images)} val_repeat={len(repeat_images)}")
     return cache
 
 
@@ -1087,6 +1218,7 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "heldout_val_start_session": heldout_val_start_session,
       "heldout_val_max_samples": heldout_val_max_samples,
       "strict_val_image_disjoint": strict_val_image_disjoint,
+      "repeat_aware_val": repeat_aware_val,
       "val_id_source": val_id_source,
       "early_stop_patience": early_stop_patience,
       "mixup_pct": mixup_pct,
@@ -1123,6 +1255,7 @@ epoch = 0
 losses, test_losses, lrs = [], [], []
 best_test_loss = 1e9
 best_val_loss = 1e9
+best_val_novel_loss = 1e9
 epochs_since_best_val = 0
 torch.cuda.empty_cache()
 
@@ -1212,7 +1345,15 @@ def feature_summary(tensor):
 
 probe_initial_features = None
 
+def primary_val_cache(cache):
+    if cache is None:
+        return None
+    if isinstance(cache, dict) and cache.get("is_repeat_aware"):
+        return cache.get("novel") or cache.get("combined")
+    return cache
+
 def collect_probe_features(cache):
+    cache = primary_val_cache(cache)
     if cache is None:
         return None
     voxel = cache["voxel"].to(device)
@@ -1227,6 +1368,7 @@ def collect_probe_features(cache):
     }
 
 def probe_diagnostic_logs(cache):
+    cache = primary_val_cache(cache)
     global probe_initial_features
     if cache is None:
         return {}
@@ -1268,6 +1410,36 @@ def eval_cached_pairs(cache, split_name):
         metrics[f"{split_name}/bwd_pct_correct"] = utils.topk(utils.batchwise_cosine_similarity(clip_target_norm, clip_voxels_norm), labels, k=1).item()
         metrics[f"{split_name}/loss_clip_total"] = loss_clip.item()
     metrics[f"{split_name}/loss"] = loss.item()
+    sessions = cache.get("session") if isinstance(cache, dict) else None
+    if sessions is not None:
+        sessions = sessions.cpu()
+        session_losses, session_fwds, session_bwds = [], [], []
+        for session_i in torch.unique(sessions).tolist():
+            idx = torch.where(sessions == int(session_i))[0]
+            if len(idx) < 2:
+                continue
+            session_metrics = eval_cached_pairs(
+                {
+                    "image": cache["image"][idx],
+                    "voxel": cache["voxel"][idx],
+                    "source": cache.get("source", "unknown"),
+                    "bucket": cache.get("bucket", split_name),
+                },
+                f"{split_name}/session_{int(session_i)}",
+            )
+            session_losses.append(session_metrics[f"{split_name}/session_{int(session_i)}/loss"])
+            if f"{split_name}/session_{int(session_i)}/fwd_pct_correct" in session_metrics:
+                session_fwds.append(session_metrics[f"{split_name}/session_{int(session_i)}/fwd_pct_correct"])
+                session_bwds.append(session_metrics[f"{split_name}/session_{int(session_i)}/bwd_pct_correct"])
+            metrics.update(session_metrics)
+        if len(session_losses) >= 2:
+            metrics[f"{split_name}/session_loss_mean"] = float(np.mean(session_losses))
+            metrics[f"{split_name}/session_loss_se"] = float(np.std(session_losses, ddof=1) / math.sqrt(len(session_losses)))
+        if len(session_fwds) >= 2:
+            metrics[f"{split_name}/session_fwd_mean"] = float(np.mean(session_fwds))
+            metrics[f"{split_name}/session_fwd_se"] = float(np.std(session_fwds, ddof=1) / math.sqrt(len(session_fwds)))
+            metrics[f"{split_name}/session_bwd_mean"] = float(np.mean(session_bwds))
+            metrics[f"{split_name}/session_bwd_se"] = float(np.std(session_bwds, ddof=1) / math.sqrt(len(session_bwds)))
     return metrics
 
 probe_initial_features = collect_probe_features(val_cache)
@@ -1612,18 +1784,41 @@ for epoch in progress_bar:
             for group in optimizer.param_groups:
                 if "name" in group:
                     logs[f"lr/{group['name']}"] = group["lr"]
-            val_logs = eval_cached_pairs(val_cache, "val")
+            if isinstance(val_cache, dict) and val_cache.get("is_repeat_aware"):
+                val_logs = {}
+                for split_name, cache_key in [("val", "combined"), ("val_novel", "novel"), ("val_repeat", "repeat")]:
+                    split_logs = eval_cached_pairs(val_cache.get(cache_key), split_name)
+                    val_logs.update(split_logs)
+            else:
+                val_logs = eval_cached_pairs(val_cache, "val")
+            for split_name in ["val_novel", "val_repeat"]:
+                if f"{split_name}/fwd_pct_correct" in val_logs:
+                    val_logs[f"{split_name}_fwd"] = val_logs[f"{split_name}/fwd_pct_correct"]
+                    val_logs[f"{split_name}_bwd"] = val_logs[f"{split_name}/bwd_pct_correct"]
             logs.update(val_logs)
             logs.update(probe_diagnostic_logs(val_cache))
             if val_logs:
-                val_source = val_cache.get("source", "unknown") if val_cache is not None else "unknown"
-                print(
-                    "val_metrics "
-                    f"epoch={epoch + 1} source={val_source} "
-                    f"val/loss={val_logs.get('val/loss', float('nan')):.6g} "
-                    f"val/fwd_pct_correct={val_logs.get('val/fwd_pct_correct', float('nan')):.6g} "
-                    f"val/bwd_pct_correct={val_logs.get('val/bwd_pct_correct', float('nan')):.6g}"
-                )
+                val_source = "unknown"
+                if val_cache is not None:
+                    if isinstance(val_cache, dict) and val_cache.get("is_repeat_aware"):
+                        combined_cache = val_cache.get("combined")
+                        val_source = combined_cache.get("source", "unknown") if combined_cache is not None else "unknown"
+                    else:
+                        val_source = val_cache.get("source", "unknown")
+                for split_name in ["val", "val_novel", "val_repeat"]:
+                    if f"{split_name}/loss" not in val_logs:
+                        continue
+                    print(
+                        "val_metrics "
+                        f"epoch={epoch + 1} source={val_source} split={split_name} "
+                        f"{split_name}/loss={val_logs.get(f'{split_name}/loss', float('nan')):.6g} "
+                        f"{split_name}_fwd={val_logs.get(f'{split_name}/fwd_pct_correct', float('nan')):.6g} "
+                        f"{split_name}_bwd={val_logs.get(f'{split_name}/bwd_pct_correct', float('nan')):.6g} "
+                        f"{split_name}_session_fwd_mean={val_logs.get(f'{split_name}/session_fwd_mean', float('nan')):.6g} "
+                        f"{split_name}_session_fwd_se={val_logs.get(f'{split_name}/session_fwd_se', float('nan')):.6g} "
+                        f"{split_name}_session_bwd_mean={val_logs.get(f'{split_name}/session_bwd_mean', float('nan')):.6g} "
+                        f"{split_name}_session_bwd_se={val_logs.get(f'{split_name}/session_bwd_se', float('nan')):.6g}"
+                    )
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):
@@ -1657,6 +1852,10 @@ for epoch in progress_bar:
                     save_ckpt("best_val")
                 else:
                     epochs_since_best_val += 1
+            if ckpt_saving and "val_novel/loss" in logs:
+                if logs["val_novel/loss"] < best_val_novel_loss:
+                    best_val_novel_loss = logs["val_novel/loss"]
+                    save_ckpt("best_val_novel")
 
     # Save model checkpoint and reconstruct
     if (ckpt_saving) and (epoch % ckpt_interval == 0):

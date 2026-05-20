@@ -483,3 +483,108 @@ Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, wit
 - Next validation work should consider official repeat/image structure or a multi-session image-disjoint aggregate with enough examples to reduce retrieval-rank noise.
 - Do not resume architecture or regularization searches until the selector is stable on loss, mean retrieval, and the forward/backward tradeoff.
 - Continue avoiding diffusion-prior tuning, larger decoders, lower-head-LR sweeps, current LoRA residuals, adapter-only, adapter priors, and beta-std top-k masking unless the stricter validation substrate justifies revisiting them.
+
+## 2026-05-20 12:20 EDT - Cycle 8 Repeat-Aware Validation and Selector Audit
+
+### Plan executed
+- Read `/plan.md` and executed the repeat-aware validation plan only. Telegram report was not due.
+- Updated `/src/Train.py`:
+  - Added default-off `--repeat_aware_val`.
+  - Kept `behav[:,0,0]`/metadata as the image ID source.
+  - Extended train image-ID scanning from a set into repeat counts, train session counts, and sample manifest rows.
+  - Reworked held-out validation cache construction to scan validation tar shards one session at a time so per-session counts are explicit rather than inferred from sample keys.
+  - In repeat-aware mode, validation examples whose image IDs are absent from training go to `val_novel`; validation examples whose image IDs appear in training go to `val_repeat`; the combined `val` cache is kept only for legacy continuity.
+  - Added parseable `val_repeat_manifest` logging, per-session bucket counts, repeat-count summaries, and saved `val_repeat_manifest_summary.json`.
+  - Added parseable split metrics for `val_novel/loss`, `val_novel_fwd`, `val_novel_bwd`, `val_repeat/loss`, `val_repeat_fwd`, and `val_repeat_bwd`.
+  - Added per-session mean/SE metrics when at least two validation sessions have enough samples.
+  - Continued saving `last.pth` and `best_val.pth`; added `best_val_novel.pth` based on `val_novel/loss`.
+- Added Slurm scripts:
+  - `/src/accel_cycle8_repeataware_val_smoke.slurm`
+  - `/src/accel_cycle8_repeataware_val_grid.slurm`
+- Skipped repeat-derived voxel reliability and relational loss because the validation split, manifest, smoke, and grid were the cycle priority.
+
+### Verification
+- Syntax checks passed:
+  - `/src/fmri/bin/python -m py_compile /src/Train.py`
+  - `bash -n /src/accel_cycle8_repeataware_val_smoke.slurm`
+  - `bash -n /src/accel_cycle8_repeataware_val_grid.slurm`
+
+### Jobs launched
+- Smoke: `sbatch /src/accel_cycle8_repeataware_val_smoke.slurm` -> job `8504958`.
+- Grid, launched only after smoke passed: `sbatch /src/accel_cycle8_repeataware_val_grid.slurm` -> array `8505114`.
+
+### Smoke result
+- Job `8504958` completed cleanly: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:04:34`, batch `MaxRSS=21775776K`, under requested `32G`.
+- Smoke manifest:
+  - ID source `metadata`; train unique IDs `536`; validation raw `76`; combined kept `75`; `val_novel=69`; `val_repeat=6`; overlap fraction `0.080000`.
+  - Train repeat summary: min `1`, median `1.0`, max `3`, mean `1.2836`.
+  - Validation repeat summary: min `1`, median `1.0`, max `2`, mean `1.0133`.
+  - Session counts: `{1: 76}`; bucket counts `{novel: {1: 69}, repeat: {1: 6}}`.
+- Smoke split metrics after epoch 2:
+  - `val/loss=3.65114`, `val_fwd=0.133333`, `val_bwd=0.080000`.
+  - `val_novel/loss=3.52418`, `val_novel_fwd=0.130435`, `val_novel_bwd=0.072464`.
+  - `val_repeat/loss=1.51666`, `val_repeat_fwd=0.333333`, `val_repeat_bwd=0.166667`.
+- Smoke saved `best_val.pth`, `best_val_novel.pth`, and `last.pth`.
+
+### Grid job states
+- Grid `8505114` completed cleanly for both tasks.
+- Task 0 `baseline_all_repeataware_val`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=01:07:54`, batch `MaxRSS=21628168K`, under requested `64G`.
+- Task 1 `adapter_head_repeataware_val`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=01:07:51`, batch `MaxRSS=21259M`, under requested `64G`.
+
+### Manifest/audit counts
+- Both grid tasks reported identical repeat-aware manifests:
+  - ID source `metadata`.
+  - Train unique IDs `536`.
+  - Validation raw count `155`; combined kept count `150`.
+  - `val_novel=143`, `val_repeat=7`.
+  - Overlap fraction `0.046667`.
+  - Train repeat summary: min `1`, median `1.0`, max `3`, mean `1.2836`.
+  - Validation repeat summary: min `1`, median `1.0`, max `2`, mean `1.0333`.
+  - Validation session counts `{1: 76, 2: 79}`.
+  - Bucket session counts: novel `{1: 69, 2: 74}`, repeat `{1: 6, 2: 1}`, dropped `{}`.
+- Manifest summaries were saved to:
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/c8_baseline_all_repeataware_val/val_repeat_manifest_summary.json`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/c8_adapter_head_repeataware_val/val_repeat_manifest_summary.json`
+
+### Final matched metrics
+
+| Condition | Task | Trainable params | val_novel/loss | val_novel_fwd | val_novel_bwd | Val novel mean | val_repeat/loss | val_repeat_fwd | val_repeat_bwd | test/loss | test_fwd | test_bwd | Test mean | train/loss | train_fwd | train_bwd |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline_all_repeataware_val | 0 | 469,462,680 | 2.67951 | 0.335664 | 0.314685 | 0.325175 | 0.316159 | 0.714286 | 1.000000 | 2.64 | 0.473 | 0.380 | 0.4265 | 0.000202 | 1.000 | 1.000 |
+| adapter_head_repeataware_val | 1 | 461,057,664 | 2.70706 | 0.342657 | 0.279720 | 0.311189 | 0.329051 | 0.714286 | 1.000000 | 2.67 | 0.463 | 0.373 | 0.4180 | 0.000215 | 1.000 | 1.000 |
+
+### Per-session validation diagnostics
+- Baseline `val_novel` per-session retrieval:
+  - fwd mean `0.487662`, SE `0.052879`.
+  - bwd mean `0.433608`, SE `0.001175`.
+- Adapter-head `val_novel` per-session retrieval:
+  - fwd mean `0.480905`, SE `0.046122`.
+  - bwd mean `0.406581`, SE `0.028202`.
+- `val_repeat` had only 7 total examples and only one example from session 2, so repeat per-session SE was not meaningful. Treat it as a same-image reliability diagnostic only.
+
+### Best validation epochs
+- Baseline best `val_novel/loss` at epoch 148: `2.67945`, `val_novel_fwd=0.335664`, `val_novel_bwd=0.314685`.
+- Adapter-head best `val_novel/loss` at epoch 148: `2.70703`, `val_novel_fwd=0.342657`, `val_novel_bwd=0.279720`.
+- Final epoch values were effectively tied with best-epoch values for both arms.
+
+### Rank agreement
+- `val_novel/loss` ranks baseline better; final `new_test` loss also ranks baseline better (`2.64` vs `2.67`).
+- `val_novel_fwd` ranks adapter-head better; final `new_test` forward ranks baseline better (`0.473` vs `0.463`).
+- `val_novel_bwd` ranks baseline better; final `new_test` backward also ranks baseline better (`0.380` vs `0.373`).
+- `val_novel` mean retrieval ranks baseline better (`0.3252` vs `0.3112`); final `new_test` mean retrieval also ranks baseline better (`0.4265` vs `0.4180`).
+
+### Conclusions
+- Repeat-aware validation works operationally. It preserves the image-disjoint `val_novel` selector while exposing same-image held-out repeats as `val_repeat` instead of silently dropping or averaging them into the selector.
+- The two-session repeat-aware grid had enough novel samples to interpret (`143`), satisfying the Cycle 8 minimum better than the one-session smoke (`69`).
+- `val_repeat` is much easier than `val_novel` (`val_repeat_bwd=1.0` for both arms, very low loss), which confirms same-image repeat reliability answers a different question from novel-image generalization.
+- Baseline-all is the stronger matched model arm in Cycle 8: it wins final `new_test` loss, forward retrieval, backward retrieval, and mean retrieval.
+- Adapter-head is not promoted. It only wins `val_novel_fwd`, while losing `val_novel` loss, `val_novel_bwd`, `val_novel` mean retrieval, and all final `new_test` metrics.
+- One-session training memorization persists for both arms (`train_fwd=train_bwd=1.0`, train loss around `2e-4`).
+- Compared with Cycle 7 baseline mean `0.4115`, the Cycle 8 baseline run improved final mean retrieval to `0.4265`, with `test_bwd=0.380` above the Cycle 7 guardrail `0.323`; however, this is the baseline arm under validation instrumentation, not a new architecture.
+
+### Recommended next research questions
+- Keep `baseline_all` as the default anchor.
+- Use `val_novel` loss/mean/bwd as the selector family, but keep forward retrieval as a guardrail because `val_novel_fwd` still selected the wrong arm here.
+- Because `val_repeat` is strong while `val_novel` remains much weaker, prioritize session response scaling, repeat reliability, and ROI-stratified repeat-derived voxel diagnostics next.
+- A follow-on geometry-preserving relational consistency test is reasonable only as a separate cycle and should use strict rejection rules: improve final `new_test` mean above `0.4265` or at least above the Cycle 7 reference `0.4115`, keep forward retrieval at baseline level, and keep `test_bwd >= 0.323`.
+- Continue excluding Procrustes/SRM alignment, LoRA, adapter-only, lower-head-LR sweeps, adapter priors, beta-std top-k masks, blurred CLIP schedules, Fourier augmentation, diffusion-prior tuning, and larger decoders from this validation cycle.
