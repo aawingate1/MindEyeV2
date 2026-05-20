@@ -19,6 +19,7 @@ STATE_DIR = ROOT / ".agent-controller"
 LOG_DIR = STATE_DIR / "logs"
 STATE_FILE = STATE_DIR / "state.json"
 TELEGRAM_ENV = STATE_DIR / "telegram.env"
+STRATEGY_CHAT = ROOT / "strategizing-chat.md"
 
 AGENTS = {
     "bio": ROOT / "run-bio-agent.sh",
@@ -79,7 +80,14 @@ def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def run_agent(name: str, prompt: str, timeout_s: int, dry_run: bool = False) -> None:
+def run_agent(
+    name: str,
+    prompt: str,
+    timeout_s: int,
+    dry_run: bool = False,
+    state: dict | None = None,
+    telegram_poll_interval_s: int = 60,
+) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     log_path = LOG_DIR / f"{stamp}-{name}.log"
@@ -95,23 +103,58 @@ def run_agent(name: str, prompt: str, timeout_s: int, dry_run: bool = False) -> 
         append(log_path, "## Dry Run\nNot invoked.\n")
         return
 
-    result = subprocess.run(
-        cmd,
-        cwd=ROOT,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=timeout_s,
-        check=False,
-    )
+    stdout_path = log_path.with_suffix(".stdout.tmp")
+    stderr_path = log_path.with_suffix(".stderr.tmp")
+    with stdout_path.open("w+", encoding="utf-8") as stdout_handle, stderr_path.open("w+", encoding="utf-8") as stderr_handle:
+        process = subprocess.Popen(
+            cmd,
+            cwd=ROOT,
+            stdin=subprocess.PIPE,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            text=True,
+        )
+        assert process.stdin is not None
+        process.stdin.write(prompt)
+        process.stdin.close()
+
+        deadline = time.monotonic() + timeout_s
+        next_poll = time.monotonic() + max(1, telegram_poll_interval_s)
+        while process.poll() is None:
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait()
+                raise TimeoutError(f"{name} timed out after {timeout_s}s; see {log_path}")
+            if state is not None and time.monotonic() >= next_poll:
+                try:
+                    poll_telegram_comments(state, dry_run)
+                    save_state(state)
+                except Exception:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    raise
+                next_poll = time.monotonic() + max(1, telegram_poll_interval_s)
+            time.sleep(1)
+
+        stdout_handle.seek(0)
+        stderr_handle.seek(0)
+        stdout = stdout_handle.read()
+        stderr = stderr_handle.read()
+        returncode = process.returncode
+    stdout_path.unlink(missing_ok=True)
+    stderr_path.unlink(missing_ok=True)
     append(
         log_path,
-        f"## Return Code\n{result.returncode}\n\n"
-        f"## Stdout\n{result.stdout}\n\n"
-        f"## Stderr\n{result.stderr}\n",
+        f"## Return Code\n{returncode}\n\n"
+        f"## Stdout\n{stdout}\n\n"
+        f"## Stderr\n{stderr}\n",
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"{name} failed with exit code {result.returncode}; see {log_path}")
+    if returncode != 0:
+        raise RuntimeError(f"{name} failed with exit code {returncode}; see {log_path}")
 
 
 def send_telegram_report(cycle_id: int, dry_run: bool = False) -> None:
@@ -133,6 +176,62 @@ def send_telegram_report(cycle_id: int, dry_run: bool = False) -> None:
     with urlopen(request, timeout=30) as response:
         body = response.read().decode("utf-8", errors="replace")
     append(STATE_DIR / "telegram.log", f"[{now()}] cycle {cycle_id}: {body}\n")
+
+
+def poll_telegram_comments(state: dict, dry_run: bool = False) -> None:
+    """Append inbound Telegram messages from the configured user chat to strategy chat."""
+    env = load_env(TELEGRAM_ENV)
+    token = env.get("TELEGRAM_BOT_TOKEN")
+    chat_id = str(env.get("TELEGRAM_CHAT_ID", "")).strip()
+    if not token or not chat_id:
+        raise RuntimeError(f"Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in {TELEGRAM_ENV}")
+
+    if dry_run:
+        append(STATE_DIR / "telegram.log", f"[{now()}] dry-run inbound Telegram poll\n")
+        return
+
+    offset = state.get("telegram_update_offset")
+    params = {"timeout": 0, "allowed_updates": json.dumps(["message"])}
+    if offset is not None:
+        params["offset"] = int(offset)
+    url = f"https://api.telegram.org/bot{token}/getUpdates?{urlencode(params)}"
+    with urlopen(url, timeout=30) as response:
+        body = response.read().decode("utf-8", errors="replace")
+    payload = json.loads(body)
+    if not payload.get("ok"):
+        raise RuntimeError(f"Telegram getUpdates failed: {payload}")
+
+    updates = payload.get("result", [])
+    if not updates:
+        return
+
+    max_update_id = max(int(update["update_id"]) for update in updates)
+    state["telegram_update_offset"] = max_update_id + 1
+
+    # First poll establishes the offset so a fresh restart does not import old chat history.
+    if offset is None:
+        append(STATE_DIR / "telegram.log", f"[{now()}] initialized Telegram update offset at {max_update_id + 1}\n")
+        return
+
+    for update in updates:
+        message = update.get("message") or {}
+        chat = message.get("chat") or {}
+        if str(chat.get("id")) != chat_id:
+            continue
+        text = message.get("text") or message.get("caption") or ""
+        text = text.strip()
+        if not text:
+            continue
+        sender = message.get("from") or {}
+        sender_name = sender.get("username") or sender.get("first_name") or "telegram-user"
+        timestamp = now()
+        append(
+            STRATEGY_CHAT,
+            f"\n## User Telegram Comment - {timestamp}\n"
+            f"From: {sender_name}\n\n"
+            f"{text[:4000]}\n",
+        )
+        append(STATE_DIR / "telegram.log", f"[{timestamp}] imported inbound comment from Telegram update {update['update_id']}\n")
 
 
 def git_auto_push(cycle_id: int, remote: str, branch: str, dry_run: bool = False) -> None:
@@ -177,20 +276,32 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
     cycle_id = int(state.get("cycle", 0)) + 1
     print(f"[{now()}] cycle {cycle_id} start", flush=True)
 
-    run_agent("bio", f"Cycle {cycle_id}: research phase. Update /workspace/myresearch.", args.agent_timeout_s, args.dry_run)
-    run_agent("cs", f"Cycle {cycle_id}: research phase. Update /workspace/myresearch.", args.agent_timeout_s, args.dry_run)
+    poll_telegram_comments(state, args.dry_run)
+    save_state(state)
+    run_agent("bio", f"Cycle {cycle_id}: research phase. Update /workspace/myresearch.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+    poll_telegram_comments(state, args.dry_run)
+    save_state(state)
+    run_agent("cs", f"Cycle {cycle_id}: research phase. Update /workspace/myresearch.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+    poll_telegram_comments(state, args.dry_run)
+    save_state(state)
 
     for turn in range(1, args.max_turns + 1):
-        run_agent("bio", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run)
-        run_agent("cs", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run)
+        run_agent("bio", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+        poll_telegram_comments(state, args.dry_run)
+        save_state(state)
+        run_agent("cs", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+        poll_telegram_comments(state, args.dry_run)
+        save_state(state)
         if discussion_agreed(cycle_id):
             break
 
-    run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /plan.md.", args.agent_timeout_s, args.dry_run)
+    run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /plan.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+    poll_telegram_comments(state, args.dry_run)
+    save_state(state)
 
     report_due = time.time() - float(state.get("last_report_ts", 0.0)) >= args.report_interval_s
     due_text = "Telegram report is due; append a concise report-ready update to /progress.md." if report_due else "Telegram report is not due."
-    run_agent("orchestrator", f"Cycle {cycle_id}: execute /plan.md. {due_text}", args.orchestrator_timeout_s, args.dry_run)
+    run_agent("orchestrator", f"Cycle {cycle_id}: execute /plan.md. {due_text}", args.orchestrator_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
     git_auto_push(cycle_id, args.git_remote, args.git_branch, args.dry_run)
     if report_due and not args.dry_run:
         send_telegram_report(cycle_id, args.dry_run)
@@ -210,8 +321,9 @@ def main() -> int:
     parser.add_argument("--orchestrator-timeout-s", type=int, default=21600)
     parser.add_argument("--max-turns", type=int, default=4)
     parser.add_argument("--report-interval-s", type=int, default=43200)
+    parser.add_argument("--telegram-poll-interval-s", type=int, default=60)
     parser.add_argument("--git-remote", default="git@github.com:aawingate1/MindEyeV2.git")
-    parser.add_argument("--git-branch", default="codex")
+    parser.add_argument("--git-branch", default="codex2")
     args = parser.parse_args()
 
     STATE_DIR.mkdir(exist_ok=True)
