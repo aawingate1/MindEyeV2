@@ -260,15 +260,15 @@ def git_auto_push(cycle_id: int, remote: str, branch: str, dry_run: bool = False
 
 def discussion_agreed(cycle_id: int) -> bool:
     chat = read(ROOT / "strategizing-chat.md")
-    cycle_header = re.compile(rf"(?im)^##\s*Cycle\s+{cycle_id}\b")
-    matches = list(cycle_header.finditer(chat))
-    if not matches:
-        return False
-    cycle_text = chat[matches[0].start():]
-    next_cycle = re.search(rf"(?im)^##\s*Cycle\s+(?!{cycle_id}\b)\d+\b", cycle_text[len(matches[0].group(0)):])
-    if next_cycle:
-        cycle_text = cycle_text[: len(matches[0].group(0)) + next_cycle.start()]
-    markers = re.findall(r"(?im)^\s*(AGREE|DISAGREE)\s*:", cycle_text)
+    heading_re = re.compile(r"(?im)^##.*\bcycle\s+(\d+)\b.*$")
+    headings = list(heading_re.finditer(chat))
+    markers = []
+    for index, heading in enumerate(headings):
+        if int(heading.group(1)) != cycle_id:
+            continue
+        section_end = headings[index + 1].start() if index + 1 < len(headings) else len(chat)
+        section = chat[heading.start():section_end]
+        markers.extend(re.findall(r"(?im)^\s*(AGREE|DISAGREE)\s*:", section))
     return bool(markers) and markers[-1].upper() == "AGREE"
 
 
