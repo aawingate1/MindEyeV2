@@ -210,7 +210,7 @@ def main() -> int:
     parser.add_argument("--orchestrator-timeout-s", type=int, default=21600)
     parser.add_argument("--max-turns", type=int, default=4)
     parser.add_argument("--report-interval-s", type=int, default=43200)
-    parser.add_argument("--git-remote", default="fork")
+    parser.add_argument("--git-remote", default="git@github.com:aawingate1/MindEyeV2.git")
     parser.add_argument("--git-branch", default="codex")
     args = parser.parse_args()
 
