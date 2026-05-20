@@ -746,6 +746,7 @@ if adapter_prior_weight > 0:
 train_dls = [train_dl[f'subj0{s}'] for s in subj_list]
 
 model, optimizer, *train_dls, lr_scheduler = accelerator.prepare(model, optimizer, *train_dls, lr_scheduler)
+model_for_submodules = model.module if hasattr(model, "module") else model
 # leaving out test_dl since we will only have local_rank 0 device do evals
 if adapter_prior_state is not None:
     adapter_prior_state = {n: p.to(device) for n, p in adapter_prior_state.items()}
@@ -837,7 +838,8 @@ for epoch in progress_bar:
             if use_image_aug: 
                 image = img_augment(image)
 
-            clip_target = clip_img_embedder(image)
+            with torch.no_grad():
+                clip_target = clip_img_embedder(image)
             assert not torch.any(torch.isnan(clip_target))
 
             if epoch < int(mixup_pct * num_epochs):
@@ -848,7 +850,7 @@ for epoch in progress_bar:
                 select_list = [select_iters[f"subj0{s}_iter{train_i}"].detach().to(device) for s in subj_list]
                 select = torch.cat(select_list, dim=0)
 
-            voxel_ridge_list = [model.ridge(voxel_list[si],si) for si,s in enumerate(subj_list)]
+            voxel_ridge_list = [model_for_submodules.ridge(voxel_list[si],si) for si,s in enumerate(subj_list)]
             voxel_ridge = torch.cat(voxel_ridge_list, dim=0)
 
             if adapter_prior_weight > 0:
@@ -871,14 +873,14 @@ for epoch in progress_bar:
                 loss_adapter_prior_total += loss_adapter_prior.item()
                 loss += loss_adapter_prior * adapter_prior_weight
 
-            backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
+            backbone, clip_voxels, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
 
             if clip_scale>0:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                 clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
             if use_prior:
-                loss_prior, prior_out = model.diffusion_prior(text_embed=backbone, image_embed=clip_target)
+                loss_prior, prior_out = model_for_submodules.diffusion_prior(text_embed=backbone, image_embed=clip_target)
                 loss_prior_total += loss_prior.item()
                 loss_prior *= prior_scale
                 loss += loss_prior
@@ -907,7 +909,8 @@ for epoch in progress_bar:
             if blurry_recon:     
                 image_enc_pred, transformer_feats = blurry_image_enc_
 
-                image_enc = autoenc.encode(2*image-1).latent_dist.mode() * 0.18215
+                with torch.no_grad():
+                    image_enc = autoenc.encode(2*image-1).latent_dist.mode() * 0.18215
                 loss_blurry = l1(image_enc_pred, image_enc)
                 loss_blurry_total += loss_blurry.item()
 
@@ -919,8 +922,9 @@ for epoch in progress_bar:
 
                 image_norm = (image - mean)/std
                 image_aug = (blur_augs(image) - mean)/std
-                _, cnx_embeds = cnx(image_norm)
-                _, cnx_aug_embeds = cnx(image_aug)
+                with torch.no_grad():
+                    _, cnx_embeds = cnx(image_norm)
+                    _, cnx_aug_embeds = cnx(image_aug)
 
                 cont_loss = utils.soft_cont_loss(
                     nn.functional.normalize(transformer_feats.reshape(-1, transformer_feats.shape[-1]), dim=-1),
@@ -994,8 +998,8 @@ for epoch in progress_bar:
                 clip_target = clip_img_embedder(image.float())
 
                 for rep in range(3):
-                    voxel_ridge = model.ridge(voxel[:,rep],0) # 0th index of subj_list
-                    backbone0, clip_voxels0, blurry_image_enc_ = model.backbone(voxel_ridge)
+                    voxel_ridge = model_for_submodules.ridge(voxel[:,rep],0) # 0th index of subj_list
+                    backbone0, clip_voxels0, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
                     if rep==0:
                         clip_voxels = clip_voxels0
                         backbone = backbone0
@@ -1013,7 +1017,7 @@ for epoch in progress_bar:
                 random_samps = np.random.choice(np.arange(len(image)), size=len(image)//5, replace=False)
 
                 if use_prior:
-                    loss_prior, contaminated_prior_out = model.diffusion_prior(text_embed=backbone[random_samps], image_embed=clip_target[random_samps])
+                    loss_prior, contaminated_prior_out = model_for_submodules.diffusion_prior(text_embed=backbone[random_samps], image_embed=clip_target[random_samps])
                     test_loss_prior_total += loss_prior.item()
                     loss_prior *= prior_scale
                     loss += loss_prior
