@@ -9,6 +9,7 @@
 import os
 import sys
 import json
+import hashlib
 import argparse
 import numpy as np
 import math
@@ -256,6 +257,14 @@ parser.add_argument(
     help="Maximum unique image/voxel pairs to cache from held-out validation shards.",
 )
 parser.add_argument(
+    "--strict_val_image_disjoint", action=argparse.BooleanOptionalAction, default=False,
+    help="When enabled, filter held-out validation samples whose image IDs occur in the training shards and audit overlap.",
+)
+parser.add_argument(
+    "--val_id_source", type=str, default="auto", choices=["auto", "key", "metadata", "image_hash"],
+    help="Image identity source for strict validation audit. auto uses behavior image metadata when available.",
+)
+parser.add_argument(
     "--early_stop_patience", type=int, default=0,
     help="Stop after this many non-improving validation epochs. 0 disables early stopping.",
 )
@@ -478,6 +487,51 @@ print(f"Loaded test dl for subj{subj}!\n")
 
 val_cache = None
 
+def normalize_sample_key(key):
+    if isinstance(key, (list, tuple)):
+        return [normalize_sample_key(k) for k in key]
+    if isinstance(key, bytes):
+        return key.decode("utf-8")
+    return str(key)
+
+def resolve_val_id_source(source):
+    if source == "auto":
+        # WebDataset keys are sample-record IDs; the behavior image index is the
+        # stable NSD/COCO stimulus identity already used to load image targets.
+        return "metadata"
+    return source
+
+def make_image_id(behav_row, key, source):
+    resolved = resolve_val_id_source(source)
+    if resolved == "metadata":
+        return f"metadata:{int(behav_row[0].item())}", resolved
+    if resolved == "key":
+        return f"key:{normalize_sample_key(key)}", resolved
+    if resolved == "image_hash":
+        image_i = int(behav_row[0].item())
+        digest = hashlib.sha1(np.asarray(images[image_i]).tobytes()).hexdigest()
+        return f"image_hash:{digest}", resolved
+    raise ValueError(f"Unknown val_id_source: {source}")
+
+def collect_train_image_ids(source):
+    if not strict_val_image_disjoint:
+        return set(), resolve_val_id_source(source)
+    resolved_source = resolve_val_id_source(source)
+    train_url = f"{data_path}/wds/subj0{subj}/train/" + "{0.." + f"{num_sessions-1}" + "}.tar"
+    print(f"Collecting train image IDs for validation audit source={resolved_source} from {train_url}")
+    id_data = wds.WebDataset(train_url, resampled=False, nodesplitter=my_split_by_node)\
+                        .decode("torch")\
+                        .rename(behav="behav.npy")\
+                        .to_tuple(*["behav", "__key__"])
+    id_dl = torch.utils.data.DataLoader(id_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
+    train_ids = set()
+    for behav0, key0 in id_dl:
+        for sample_i in range(len(behav0)):
+            image_id, _ = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_source)
+            train_ids.add(image_id)
+    print(f"Collected train image IDs for validation audit: source={resolved_source} train_unique={len(train_ids)}")
+    return train_ids, resolved_source
+
 def build_val_cache():
     if val_fraction <= 0 and heldout_val_sessions <= 0:
         return None
@@ -513,23 +567,35 @@ def build_val_cache():
         val_samples = int(round(750 * source_sessions * val_fraction))
         val_samples = min(300, max(batch_size, val_samples))
 
+    train_image_ids, resolved_id_source = collect_train_image_ids(val_id_source)
     print(f"Building deterministic validation cache source={val_source} from {val_url} with up to {val_samples} samples")
     val_data = wds.WebDataset(val_url, resampled=False, nodesplitter=my_split_by_node)\
                         .shuffle(750, initial=750, rng=random.Random(seed + 1000))\
                         .decode("torch")\
                         .rename(behav="behav.npy", past_behav="past_behav.npy", future_behav="future_behav.npy", olds_behav="olds_behav.npy")\
-                        .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav"])
+                        .to_tuple(*["behav", "past_behav", "future_behav", "olds_behav", "__key__"])
     val_dl = torch.utils.data.DataLoader(val_data, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
     val_images, val_voxels = [], []
     seen_images = set()
-    for behav0, past_behav0, future_behav0, old_behav0 in val_dl:
+    val_candidate_ids = set()
+    val_kept_ids = set()
+    val_before = 0
+    dropped_overlap = 0
+    for behav0, past_behav0, future_behav0, old_behav0, key0 in val_dl:
         image_idx = behav0[:,0,0].cpu().long().numpy()
         voxel_idx = behav0[:,0,5].cpu().long().numpy()
-        for image_i, voxel_i in zip(image_idx, voxel_idx):
+        for sample_i, (image_i, voxel_i) in enumerate(zip(image_idx, voxel_idx)):
             image_i = int(image_i)
             if image_i in seen_images:
                 continue
             seen_images.add(image_i)
+            image_id, resolved_id_source = make_image_id(behav0[sample_i, 0], key0[sample_i], resolved_id_source)
+            val_candidate_ids.add(image_id)
+            val_before += 1
+            if strict_val_image_disjoint and image_id in train_image_ids:
+                dropped_overlap += 1
+                continue
+            val_kept_ids.add(image_id)
             val_images.append(torch.tensor(images[image_i], dtype=data_type))
             voxel = voxels[f'subj0{subj}'][int(voxel_i)].unsqueeze(0).unsqueeze(0)
             val_voxels.append(apply_reliability(voxel, f'subj0{subj}').squeeze(0))
@@ -537,6 +603,48 @@ def build_val_cache():
                 break
         if len(val_images) >= val_samples:
             break
+
+    overlap_ids = val_candidate_ids.intersection(train_image_ids)
+    remaining_overlap_ids = val_kept_ids.intersection(train_image_ids)
+    overlap_fraction = float(len(overlap_ids) / max(1, len(val_candidate_ids)))
+    print(
+        "val_image_overlap "
+        f"source={resolved_id_source} train_unique={len(train_image_ids)} "
+        f"val_before={val_before} val_after={len(val_images)} "
+        f"overlap_unique={len(overlap_ids)} overlap_fraction={overlap_fraction:.6f} "
+        f"dropped_overlap={dropped_overlap} strict={1 if strict_val_image_disjoint else 0}"
+    )
+    if strict_val_image_disjoint and len(remaining_overlap_ids) > 0:
+        raise RuntimeError(
+            "strict_val_image_disjoint failed: validation still contains "
+            f"{len(remaining_overlap_ids)} train-overlap image IDs after filtering"
+        )
+
+    summary = {
+        "subject": int(subj),
+        "train_sessions": {"start": 0, "end": int(num_sessions - 1), "count": int(num_sessions)},
+        "validation_sessions": {
+            "start": int(val_start) if heldout_val_sessions > 0 else 0,
+            "end": int(val_end) if heldout_val_sessions > 0 else int(num_sessions - 1),
+            "count": int(source_sessions),
+        },
+        "id_source": resolved_id_source,
+        "strict": bool(strict_val_image_disjoint),
+        "train_unique": int(len(train_image_ids)),
+        "val_before": int(val_before),
+        "val_after": int(len(val_images)),
+        "overlap_unique": int(len(overlap_ids)),
+        "overlap_fraction": overlap_fraction,
+        "dropped_overlap": int(dropped_overlap),
+        "remaining_overlap_unique": int(len(remaining_overlap_ids)),
+        "validation_source": val_source,
+        "validation_url": val_url,
+    }
+    if accelerator.is_main_process and ckpt_saving:
+        summary_path = os.path.join(outdir, "val_image_overlap_summary.json")
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2, sort_keys=True)
+        print(f"Saved validation image-overlap summary to {summary_path}")
 
     if len(val_images) < 2:
         print("Validation cache skipped because fewer than 2 unique samples were found.")
@@ -546,6 +654,7 @@ def build_val_cache():
         "voxel": torch.stack(val_voxels).to(data_type),
         "source": val_source,
         "url": val_url,
+        "image_overlap_summary": summary,
     }
     print(f"Validation cache ready: source={val_source} n={len(val_images)} unique image/voxel pairs")
     return cache
@@ -977,6 +1086,8 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "heldout_val_sessions": heldout_val_sessions,
       "heldout_val_start_session": heldout_val_start_session,
       "heldout_val_max_samples": heldout_val_max_samples,
+      "strict_val_image_disjoint": strict_val_image_disjoint,
+      "val_id_source": val_id_source,
       "early_stop_patience": early_stop_patience,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,

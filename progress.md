@@ -389,3 +389,97 @@ Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, wit
 - Next validation work should enforce image-ID exclusion from the actual training loader and use either multiple excluded sessions, official repeat structure, or metadata-backed repeat/reliability splits.
 - If compute is limited, use heldout-2 or a multi-session aggregate rather than heldout-1 alone, because heldout-2 better matched new-test backward and mean retrieval in this cycle.
 - Continue to avoid diffusion-prior tuning, larger decoders, Fourier augmentation, blurred-CLIP schedules, adapter-only, adapter priors, beta-std top-k masking, lower-head-LR sweeps, and the current LoRA residual until a more reliable validation signal justifies them.
+
+## 2026-05-20 10:40 EDT - Cycle 7 Image-Disjoint Held-Out Validation Audit
+
+### Plan executed
+- Read `/plan.md` and executed only the Cycle 7 validation-audit plan. Telegram report was not due.
+- Inspected the WebDataset train shard contents. The tar records contain `behav.npy`, `past_behav.npy`, `future_behav.npy`, `olds_behav.npy`, plus WebDataset `__key__`; there are no image files or metadata sidecars in the shards. The stable image identity used by training is `behav[:,0,0]`, the NSD/COCO image index into `coco_images_224_float16.hdf5`.
+- Updated `/src/Train.py`:
+  - Added default-off `--strict_val_image_disjoint`.
+  - Added `--val_id_source {auto,key,metadata,image_hash}`, with `auto` resolving to the behavior image-index metadata.
+  - Added training-shard image-ID scanning for strict validation audit.
+  - Added held-out validation filtering that drops validation examples whose resolved image ID appears in the actual training shard range.
+  - Added parseable `val_image_overlap` logging and `val_image_overlap_summary.json` saving under each run log directory when checkpoint saving is enabled.
+  - Preserved existing parseable `val_metrics` logging.
+- Added Slurm scripts:
+  - `/src/accel_cycle7_imgdisjoint_val_smoke.slurm`
+  - `/src/accel_cycle7_imgdisjoint_val_grid.slurm`
+
+### Verification
+- Syntax checks passed:
+  - `/src/fmri/bin/python -m py_compile /src/Train.py`
+  - `bash -n /src/accel_cycle7_imgdisjoint_val_smoke.slurm`
+  - `bash -n /src/accel_cycle7_imgdisjoint_val_grid.slurm`
+
+### Jobs launched
+- Smoke: `sbatch /src/accel_cycle7_imgdisjoint_val_smoke.slurm` -> job `8501566`.
+- Grid, launched only after smoke passed: `sbatch /src/accel_cycle7_imgdisjoint_val_grid.slurm` -> array `8501636`.
+
+### Smoke result
+- Job `8501566` completed cleanly: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:02:27`, batch `MaxRSS=21625968K`, under requested `32G`.
+- Validation audit:
+  - ID source: `metadata`
+  - train unique IDs: `536`
+  - validation before filtering: `83`
+  - validation after filtering: `75`
+  - overlap unique: `8`
+  - overlap fraction: `0.096386`
+  - dropped overlaps: `8`
+  - strict: `1`
+- Parseable smoke validation:
+  - epoch 1: `val/loss=4.30812`, `val_fwd=0.0666667`, `val_bwd=0.0133333`
+  - epoch 2: `val/loss=3.67458`, `val_fwd=0.186667`, `val_bwd=0.0666667`
+- Final smoke new-test metrics: `test/loss=4.68`, `test_fwd=0.110`, `test_bwd=0.0367`.
+- Final smoke train metrics: `train/loss=1.10`, `train_fwd=0.843`, `train_bwd=0.696`.
+
+### Grid job states
+- Array `8501636` completed cleanly for both tasks with `ExitCode=0:0`.
+- Task 0 `baseline_all_imgdisjoint_val2`: `Elapsed=00:49:00`, batch `MaxRSS=21768328K`, under requested `64G`.
+- Task 1 `adapter_head_imgdisjoint_val2`: `Elapsed=01:34:48`, batch `MaxRSS=21771272K`, under requested `64G`.
+
+### Validation audit
+- Both grid tasks reported identical strict image-disjoint audit counts:
+  - ID source: `metadata`
+  - train unique IDs: `536`
+  - validation before filtering: `169`
+  - validation after filtering: `150`
+  - overlap unique: `19`
+  - overlap fraction: `0.112426`
+  - dropped overlaps: `19`
+  - strict: `1`
+- `val_image_overlap_summary.json` was saved for both runs according to stdout:
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/c7_baseline_all_imgdisjoint_val2/val_image_overlap_summary.json`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/c7_adapter_head_imgdisjoint_val2/val_image_overlap_summary.json`
+
+### Final matched metrics
+
+| Condition | Task | Val n | Trainable params | Final val/loss | val_fwd | val_bwd | Val mean | Final test/loss | test_fwd | test_bwd | Test mean | train/loss | train_fwd | train_bwd |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline_all_imgdisjoint_val2 | 0 | 150 | 469,462,680 | 2.84452 | 0.333333 | 0.273333 | 0.303333 | 2.68 | 0.500 | 0.323 | 0.4115 | 0.000209 | 1.000 | 1.000 |
+| adapter_head_imgdisjoint_val2 | 1 | 150 | 461,057,664 | 2.86870 | 0.306667 | 0.253333 | 0.280000 | 2.68 | 0.487 | 0.330 | 0.4085 | 0.000213 | 1.000 | 1.000 |
+
+### Best validation epochs
+- `baseline_all_imgdisjoint_val2`: best val loss at epoch 150, `val/loss=2.84452`, `val_fwd=0.333333`, `val_bwd=0.273333`, mean `0.303333`.
+- `adapter_head_imgdisjoint_val2`: best val loss at epoch 148, `val/loss=2.86868`, `val_fwd=0.306667`, `val_bwd=0.253333`, mean `0.280000`; final epoch was essentially tied at `2.86870`.
+
+### Rank agreement
+- Val loss ranks `baseline_all` better; new-test loss is tied at the displayed precision (`2.68` vs `2.68`).
+- Val forward retrieval ranks `baseline_all` better; new-test forward retrieval also ranks `baseline_all` better (`0.500` vs `0.487`).
+- Val backward retrieval ranks `baseline_all` better; new-test backward retrieval ranks `adapter_head` slightly better (`0.330` vs `0.323`).
+- Val mean retrieval ranks `baseline_all` better (`0.3033` vs `0.2800`); new-test mean retrieval also ranks `baseline_all` slightly better (`0.4115` vs `0.4085`).
+
+### Conclusions
+- Strict image-disjoint validation works operationally: overlapping validation examples were detected and dropped before caching, and no strict-mode failure occurred.
+- Image overlap was nontrivial even across excluded train-session shards: `19/169` unique validation candidates overlapped the one-session training image IDs in the two-session grid. This validates the Cycle 7 concern that session exclusion alone does not guarantee stimulus exclusion.
+- The image-disjoint two-session validation cache did not saturate; final validation retrieval stayed around `0.25-0.33`, far from train-cache `1.0/1.0`.
+- The stricter validation selector now agrees with new-test mean retrieval and forward retrieval, but it misses the slight new-test backward-retrieval direction.
+- Model-side results do not establish a new best condition. `baseline_all` is slightly stronger by new-test mean and forward retrieval; `adapter_head` is slightly stronger only on backward retrieval. Both still fully memorize the one-session training set.
+- Compared with Cycle 6 heldout-2, image-disjoint filtering changed the validation metrics and reinforced `baseline_all` for mean retrieval, but it still is not a complete selector for the forward/backward tradeoff.
+
+### Recommended next research questions
+- Keep strict image-disjoint validation enabled for future selector work; do not go back to session-excluded-only validation.
+- Broaden the selector beyond two sessions if compute allows, because backward-retrieval rank is still unstable.
+- Next validation work should consider official repeat/image structure or a multi-session image-disjoint aggregate with enough examples to reduce retrieval-rank noise.
+- Do not resume architecture or regularization searches until the selector is stable on loss, mean retrieval, and the forward/backward tradeoff.
+- Continue avoiding diffusion-prior tuning, larger decoders, lower-head-LR sweeps, current LoRA residuals, adapter-only, adapter priors, and beta-std top-k masking unless the stricter validation substrate justifies revisiting them.
