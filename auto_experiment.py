@@ -285,7 +285,8 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
     poll_telegram_comments(state, args.dry_run)
     save_state(state)
 
-    for turn in range(1, args.max_turns + 1):
+    turn = 1
+    while True:
         run_agent("bio", f"Cycle {cycle_id}, turn {turn}: append your discussion section to /strategizing-chat.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
         poll_telegram_comments(state, args.dry_run)
         save_state(state)
@@ -294,6 +295,7 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
         save_state(state)
         if discussion_agreed(cycle_id):
             break
+        turn += 1
 
     run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /plan.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
     poll_telegram_comments(state, args.dry_run)
@@ -319,7 +321,6 @@ def main() -> int:
     parser.add_argument("--sleep-s", type=int, default=300)
     parser.add_argument("--agent-timeout-s", type=int, default=7200)
     parser.add_argument("--orchestrator-timeout-s", type=int, default=21600)
-    parser.add_argument("--max-turns", type=int, default=4)
     parser.add_argument("--report-interval-s", type=int, default=43200)
     parser.add_argument("--telegram-poll-interval-s", type=int, default=60)
     parser.add_argument("--git-remote", default="git@github.com:aawingate1/MindEyeV2.git")
