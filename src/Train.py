@@ -247,6 +247,26 @@ parser.add_argument(
     "--early_stop_patience", type=int, default=0,
     help="Stop after this many non-improving validation epochs. 0 disables early stopping.",
 )
+parser.add_argument(
+    "--head_lr_scale", type=float, default=1.0,
+    help="LR multiplier for backbone_linear and clip_proj when train_scope=adapter_head.",
+)
+parser.add_argument(
+    "--ridge_lr_scale", type=float, default=1.0,
+    help="LR multiplier for the subject ridge adapter.",
+)
+parser.add_argument(
+    "--alignment_lora_rank", type=int, default=0,
+    help="Rank for near-identity low-rank residual alignment after ridge. 0 disables it.",
+)
+parser.add_argument(
+    "--alignment_lora_alpha", type=float, default=0.0,
+    help="Scale numerator for low-rank alignment. 0 means use rank when rank > 0.",
+)
+parser.add_argument(
+    "--alignment_lora_dropout", type=float, default=0.0,
+    help="Dropout applied inside the low-rank alignment residual.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -594,9 +614,47 @@ model.ridge = RidgeRegression(num_voxels_list, out_features=hidden_dim)
 utils.count_params(model.ridge)
 utils.count_params(model)
 
+class LowRankResidualAlignment(torch.nn.Module):
+    def __init__(self, dim, rank=0, alpha=0.0, dropout=0.0):
+        super().__init__()
+        self.rank = int(rank)
+        if self.rank <= 0:
+            self.enabled = False
+            self.scale = 0.0
+            return
+        self.enabled = True
+        alpha = float(alpha) if float(alpha) > 0 else float(self.rank)
+        self.scale = alpha / float(self.rank)
+        self.norm = torch.nn.LayerNorm(dim)
+        self.dropout = torch.nn.Dropout(dropout)
+        self.down = torch.nn.Linear(dim, self.rank, bias=False)
+        self.up = torch.nn.Linear(self.rank, dim, bias=False)
+        torch.nn.init.kaiming_uniform_(self.down.weight, a=math.sqrt(5))
+        torch.nn.init.zeros_(self.up.weight)
+
+    def forward(self, x):
+        if not self.enabled:
+            return x
+        return x + self.scale * self.up(self.dropout(self.down(self.norm(x))))
+
+model.alignment_lora = LowRankResidualAlignment(
+    hidden_dim,
+    rank=alignment_lora_rank,
+    alpha=alignment_lora_alpha,
+    dropout=alignment_lora_dropout,
+)
+if alignment_lora_rank > 0:
+    print(
+        f"Initialized alignment_lora: rank={alignment_lora_rank}, "
+        f"alpha={alignment_lora_alpha if alignment_lora_alpha > 0 else alignment_lora_rank}, "
+        f"scale={model.alignment_lora.scale}, dropout={alignment_lora_dropout}"
+    )
+utils.count_params(model.alignment_lora)
+utils.count_params(model)
+
 # test on subject 1 with fake data
 b = torch.randn((2,1,num_voxels_list[0]))
-print(b.shape, model.ridge(b,0).shape)
+print(b.shape, model.alignment_lora(model.ridge(b,0)).shape)
 
 
 # In[13]:
@@ -670,10 +728,14 @@ def apply_train_scope(scope):
             p.requires_grad = False
         for p in model.ridge.parameters():
             p.requires_grad = True
+        for p in model.alignment_lora.parameters():
+            p.requires_grad = True
     elif scope == "adapter_head":
         for p in model.parameters():
             p.requires_grad = False
         for p in model.ridge.parameters():
+            p.requires_grad = True
+        for p in model.alignment_lora.parameters():
             p.requires_grad = True
         for p in model.backbone.backbone_linear.parameters():
             p.requires_grad = True
@@ -689,23 +751,99 @@ def apply_train_scope(scope):
 
 total_params, trainable_params = apply_train_scope(train_scope)
 
-no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight', 'norm.bias', 'norm.weight']
 
+def named_param_group(name, named_params, weight_decay, lr_scale):
+    params = [p for n, p in named_params if p.requires_grad]
+    return {
+        'name': name,
+        'params': params,
+        'weight_decay': weight_decay,
+        'lr': max_lr * lr_scale,
+        'max_lr': max_lr * lr_scale,
+        'param_count': sum(p.numel() for p in params),
+    }
+
+head_scale = head_lr_scale if train_scope == "adapter_head" else 1.0
 opt_grouped_parameters = [
-    {'params': [p for n, p in model.ridge.named_parameters() if p.requires_grad], 'weight_decay': 1e-2},
-    {'params': [p for n, p in model.backbone.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
-    {'params': [p for n, p in model.backbone.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+    named_param_group('ridge', model.ridge.named_parameters(), 1e-2, ridge_lr_scale),
+    named_param_group(
+        'alignment_lora_decay',
+        [(n, p) for n, p in model.alignment_lora.named_parameters() if not any(nd in n for nd in no_decay)],
+        1e-2,
+        ridge_lr_scale,
+    ),
+    named_param_group(
+        'alignment_lora_nodecay',
+        [(n, p) for n, p in model.alignment_lora.named_parameters() if any(nd in n for nd in no_decay)],
+        0.0,
+        ridge_lr_scale,
+    ),
+    named_param_group(
+        'backbone_linear',
+        model.backbone.backbone_linear.named_parameters(),
+        1e-2,
+        head_scale,
+    ),
+    named_param_group(
+        'clip_proj_decay',
+        [(n, p) for n, p in model.backbone.clip_proj.named_parameters() if not any(nd in n for nd in no_decay)],
+        1e-2,
+        head_scale,
+    ),
+    named_param_group(
+        'clip_proj_nodecay',
+        [(n, p) for n, p in model.backbone.clip_proj.named_parameters() if any(nd in n for nd in no_decay)],
+        0.0,
+        head_scale,
+    ),
+    named_param_group(
+        'backbone_other_decay',
+        [(n, p) for n, p in model.backbone.named_parameters()
+         if p.requires_grad
+         and not n.startswith('backbone_linear.')
+         and not n.startswith('clip_proj.')
+         and not any(nd in n for nd in no_decay)],
+        1e-2,
+        1.0,
+    ),
+    named_param_group(
+        'backbone_other_nodecay',
+        [(n, p) for n, p in model.backbone.named_parameters()
+         if p.requires_grad
+         and not n.startswith('backbone_linear.')
+         and not n.startswith('clip_proj.')
+         and any(nd in n for nd in no_decay)],
+        0.0,
+        1.0,
+    ),
 ]
 if use_prior:
     opt_grouped_parameters.extend([
-        {'params': [p for n, p in model.diffusion_prior.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
-        {'params': [p for n, p in model.diffusion_prior.named_parameters() if p.requires_grad and any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        named_param_group(
+            'diffusion_prior_decay',
+            [(n, p) for n, p in model.diffusion_prior.named_parameters() if not any(nd in n for nd in no_decay)],
+            1e-2,
+            1.0,
+        ),
+        named_param_group(
+            'diffusion_prior_nodecay',
+            [(n, p) for n, p in model.diffusion_prior.named_parameters() if any(nd in n for nd in no_decay)],
+            0.0,
+            1.0,
+        )
     ])
 opt_grouped_parameters = [group for group in opt_grouped_parameters if len(group['params']) > 0]
 if len(opt_grouped_parameters) == 0:
     raise ValueError(f"train_scope={train_scope} left no trainable parameters")
 
 optimizer = torch.optim.AdamW(opt_grouped_parameters, lr=max_lr)
+print("optimizer parameter groups:")
+for group in opt_grouped_parameters:
+    print(
+        f"  {group['name']}: params={group['param_count']:,} "
+        f"weight_decay={group['weight_decay']} lr={group['lr']}"
+    )
 
 if lr_scheduler_type == 'linear':
     lr_scheduler = torch.optim.lr_scheduler.LinearLR(
@@ -718,7 +856,7 @@ elif lr_scheduler_type == 'cycle':
     print("total_steps", total_steps)
     lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer, 
-        max_lr=max_lr,
+        max_lr=[group['max_lr'] for group in opt_grouped_parameters],
         total_steps=total_steps,
         final_div_factor=1000,
         last_epoch=-1, pct_start=2/num_epochs
@@ -791,6 +929,11 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "train_scope": train_scope,
       "alignment_output_prior_weight": alignment_output_prior_weight,
       "alignment_output_prior_type": alignment_output_prior_type,
+      "head_lr_scale": head_lr_scale,
+      "ridge_lr_scale": ridge_lr_scale,
+      "alignment_lora_rank": alignment_lora_rank,
+      "alignment_lora_alpha": alignment_lora_alpha,
+      "alignment_lora_dropout": alignment_lora_dropout,
       "val_fraction": val_fraction,
       "early_stop_patience": early_stop_patience,
       "mixup_pct": mixup_pct,
@@ -895,13 +1038,66 @@ def alignment_output_prior_loss(current_outputs, reference_outputs):
         )
     raise ValueError(f"Unknown alignment_output_prior_type: {alignment_output_prior_type}")
 
+def align_ridge_output(ridge_output):
+    return model.alignment_lora(ridge_output)
+
+def feature_summary(tensor):
+    with torch.cuda.amp.autocast(enabled=False):
+        flat = tensor.detach().float().flatten(1)
+        centered = flat - flat.mean(dim=0, keepdim=True)
+        gram = centered @ centered.t()
+        denom = max(1, flat.shape[1] - 1)
+        eigvals = torch.linalg.eigvalsh(gram / denom).clamp_min(0)
+        probs = eigvals / eigvals.sum().clamp_min(1e-12)
+        entropy = -(probs * torch.log(probs.clamp_min(1e-12))).sum()
+    return {
+        "norm": torch.norm(flat, dim=1).mean().item(),
+        "mean": flat.mean().item(),
+        "std": flat.std(unbiased=False).item(),
+        "effective_rank": torch.exp(entropy).item(),
+    }
+
+probe_initial_features = None
+
+def collect_probe_features(cache):
+    if cache is None:
+        return None
+    voxel = cache["voxel"].to(device)
+    with torch.no_grad(), torch.cuda.amp.autocast(dtype=data_type):
+        ridge = model.ridge(voxel, 0)
+        aligned = align_ridge_output(ridge)
+        backbone, clip_voxels, _ = model.backbone(aligned)
+    return {
+        "ridge": ridge.detach().float().cpu(),
+        "aligned": aligned.detach().float().cpu(),
+        "clip_proj": clip_voxels.detach().float().cpu(),
+    }
+
+def probe_diagnostic_logs(cache):
+    global probe_initial_features
+    if cache is None:
+        return {}
+    current = collect_probe_features(cache)
+    if current is None:
+        return {}
+    if probe_initial_features is None:
+        probe_initial_features = {k: v.clone() for k, v in current.items()}
+    metrics = {}
+    for name, tensor in current.items():
+        stats = feature_summary(tensor.to(device))
+        for stat_name, value in stats.items():
+            metrics[f"diag/{name}_{stat_name}"] = value
+        initial = probe_initial_features[name].to(tensor.device, dtype=tensor.dtype)
+        metrics[f"diag/{name}_drift_mse"] = torch.mean((tensor - initial) ** 2).item()
+    return metrics
+
 def eval_cached_pairs(cache, split_name):
     if cache is None:
         return {}
     voxel = cache["voxel"].to(device)
     image = cache["image"].to(device)
     clip_target = clip_img_embedder(image.float())
-    voxel_ridge = model.ridge(voxel, 0)
+    voxel_ridge = align_ridge_output(model.ridge(voxel, 0))
     backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
     loss = 0.
     metrics = {}
@@ -920,6 +1116,10 @@ def eval_cached_pairs(cache, split_name):
         metrics[f"{split_name}/loss_clip_total"] = loss_clip.item()
     metrics[f"{split_name}/loss"] = loss.item()
     return metrics
+
+probe_initial_features = collect_probe_features(val_cache)
+if probe_initial_features is not None:
+    print(f"Initialized fixed-probe diagnostics from {len(probe_initial_features['ridge'])} cached samples")
 
 for epoch in progress_bar:
     model.train()
@@ -943,6 +1143,8 @@ for epoch in progress_bar:
     test_loss_prior_total = 0.
     loss_adapter_prior_total = 0.
     loss_alignment_output_prior_total = 0.
+    alignment_lora_grad_norm_total = 0.
+    alignment_lora_grad_nonfinite_total = 0.
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -1038,6 +1240,7 @@ for epoch in progress_bar:
                 loss_alignment_output_prior_total += loss_alignment_output_prior.item()
                 loss += loss_alignment_output_prior * alignment_output_prior_weight
 
+            voxel_ridge = align_ridge_output(voxel_ridge)
             backbone, clip_voxels, blurry_image_enc_ = model.backbone(voxel_ridge)
 
             if clip_scale>0:
@@ -1114,6 +1317,20 @@ for epoch in progress_bar:
 
             utils.check_loss(loss)
             accelerator.backward(loss)
+            if alignment_lora_rank > 0:
+                lora_grad_norm = 0.
+                lora_grad_terms = 0
+                lora_grad_nonfinite = 0
+                for p in accelerator.unwrap_model(model).alignment_lora.parameters():
+                    if p.grad is not None:
+                        grad_norm = p.grad.detach().float().norm()
+                        if torch.isfinite(grad_norm):
+                            lora_grad_norm += grad_norm.item()
+                            lora_grad_terms += 1
+                        else:
+                            lora_grad_nonfinite += 1
+                alignment_lora_grad_norm_total += lora_grad_norm / max(1, lora_grad_terms)
+                alignment_lora_grad_nonfinite_total += lora_grad_nonfinite
             optimizer.step()
 
             losses.append(loss.item())
@@ -1161,7 +1378,7 @@ for epoch in progress_bar:
                 clip_target = clip_img_embedder(image.float())
 
                 for rep in range(3):
-                    voxel_ridge = model.ridge(voxel[:,rep],0) # 0th index of subj_list
+                    voxel_ridge = align_ridge_output(model.ridge(voxel[:,rep],0)) # 0th index of subj_list
                     backbone0, clip_voxels0, blurry_image_enc_ = model.backbone(voxel_ridge)
                     if rep==0:
                         clip_voxels = clip_voxels0
@@ -1234,11 +1451,17 @@ for epoch in progress_bar:
                 "test/loss_prior": test_loss_prior_total / (test_i + 1),
                 "train/loss_adapter_prior": loss_adapter_prior_total / (train_i + 1),
                 "train/loss_alignment_output_prior": loss_alignment_output_prior_total / (train_i + 1),
+                "train/alignment_lora_grad_norm": alignment_lora_grad_norm_total / (train_i + 1),
+                "train/alignment_lora_grad_nonfinite": alignment_lora_grad_nonfinite_total / (train_i + 1),
                 "params/total": total_params,
                 "params/trainable": trainable_params,
                 }
+            for group in optimizer.param_groups:
+                if "name" in group:
+                    logs[f"lr/{group['name']}"] = group["lr"]
             val_logs = eval_cached_pairs(val_cache, "val")
             logs.update(val_logs)
+            logs.update(probe_diagnostic_logs(val_cache))
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):

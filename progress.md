@@ -184,3 +184,54 @@ Implemented the `/plan.md` capacity-control cycle in `/src/Train.py`: added `--t
 
 ### Telegram report-ready update
 Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, with runtime `7:53` to `47:29` and ~21.8 GB RSS under 64 GB. Baseline-all with validation plumbing got `test/loss=2.69`, `test_fwd=0.487`, `test_bwd=0.343` versus previous matched baseline `2.72/0.493/0.320`. Adapter-only reduced trainables to `16.1M` but failed on test retrieval: no-prior `test/loss=5.77`, `test_fwd=0.060`, `test_bwd=0.0067`; prior `1e-3` was `5.77/0.053/0.0067`; prior `1e-2` was `5.81/0.0267/0.0033`. Adapter-head used `461.1M` trainables and was mixed: `test/loss=2.66`, `test_fwd=0.470`, `test_bwd=0.373`, so it improved loss and backward retrieval over Cycle 3 but hurt forward retrieval. Adapter-head early-stop stopped after 21 epochs (`best_val_loss=0.044`) but final test was poor: `test/loss=3.78`, `test_fwd=0.243`, `test_bwd=0.187`; checkpoint-time best-val metrics were `test/loss=3.71`, `test_fwd=0.310`, `test_bwd=0.157`. Cached train-shard validation saturated to near-perfect retrieval and is not a useful early-stop proxy. Recommendation: do not advance adapter-only; next test should refine adapter-head with differential/lower head LR or a smaller low-rank alignment layer before the frozen shared stack. No plots generated.
+
+## 2026-05-20 06:02 EDT - Cycle 4 Constrained Adapter-Head Alignment Setup and Smoke
+
+### Plan executed
+- Read `/plan.md` at the start of the run and executed only its constrained adapter-head alignment plan. The plan file header says Cycle 5, but this is recorded as the requested Cycle 4 execution.
+- Implemented differential optimizer groups in `/src/Train.py`:
+  - Added `--head_lr_scale`, default `1.0`.
+  - Added `--ridge_lr_scale`, default `1.0`.
+  - In `train_scope=adapter_head`, `model.ridge` keeps the base LR while `backbone_linear` and `clip_proj` use `head_lr_scale * max_lr`.
+  - Optimizer logs now print group names, parameter counts, weight decay, and effective LR.
+- Implemented a default-off near-identity residual alignment block after ridge and before the shared mapper:
+  - Added `--alignment_lora_rank`, default `0`.
+  - Added `--alignment_lora_alpha`, default `0.0`, interpreted as rank when rank > 0.
+  - Added `--alignment_lora_dropout`, default `0.0`.
+  - The block computes `z + scale * B(A(LayerNorm(z)))`; `B` is zero-initialized so the residual starts as exact identity.
+  - For `train_scope=adapter_only`, trainable parameters are ridge plus the LoRA residual while the dense shared head stays frozen.
+  - For `train_scope=adapter_head`, ridge, LoRA if enabled, `backbone_linear`, and `clip_proj` are trainable.
+- Routed train, cached validation, fixed-probe diagnostics, and held-out test evaluation through the residual alignment path.
+- Added fixed-probe diagnostics from cached validation pairs: feature norm, mean, std, effective-rank summaries after ridge/alignment/`clip_proj`, plus drift MSE from initialization.
+- Kept cached train-shard validation as diagnostics only with `--early_stop_patience=0`; grid comparisons are final-epoch matched comparisons.
+- Added `/src/accel_cycle5_smoke.slurm` and `/src/accel_cycle5_grid.slurm`.
+
+### Verification and smoke jobs
+- Syntax checks passed after code fixes: `/src/fmri/bin/python -m py_compile /src/Train.py`.
+- First smoke `8497741` failed in `00:01:44`: initial probe diagnostics ran outside autocast, causing fp16 cached voxels to hit fp32 ridge weights. Fixed by wrapping probe collection in fp16 autocast. Also fixed smoke array log naming from `%j` to `%A_%a`.
+- Second smoke `8497807` failed in `00:02:07`: effective-rank eigensolve ran under fp16 autocast. Fixed by forcing covariance/eigensolve diagnostics into fp32 with autocast disabled.
+- Third smoke `8497865` completed:
+  - Task 0 `c5_smoke_adapter_head_headlr_0.1`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:03:15`, `MaxRSS=21768640K`.
+  - Task 1 `c5_smoke_alignment_lora_r4`: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:02:58`, `MaxRSS=21624200K`.
+  - Both tasks saved `best_val` and `last` checkpoints.
+  - Adapter-head smoke confirmed ridge LR `3e-4` and head LRs `3e-5`.
+  - LoRA smoke confirmed rank 4, scale `1.0`, `10,240` LoRA params, and `16,112,640` trainable params total.
+  - LoRA gradient diagnostic showed a nonfinite aggregate on epoch 1 but finite nonzero gradient by epoch 2 (`train/alignment_lora_grad_norm=24.7`). Patched the diagnostic afterward to separate finite gradient norms from nonfinite counts; this is logging-only.
+
+### Smoke metrics
+- `c5_smoke_adapter_head_headlr_0.1`, after 2 epochs: `test/loss=5.37`, `test_fwd=0.0433`, `test_bwd=0.0167`, `train/loss=1.94`, `train_fwd=0.817`, `train_bwd=0.706`.
+- `c5_smoke_alignment_lora_r4`, after 2 epochs: `test/loss=5.70`, `test_fwd=0.0833`, `test_bwd=0.00333`, `train/loss=2.66`, `train_fwd=0.800`, `train_bwd=0.265`.
+- These are smoke-only metrics and are not interpreted as final model quality.
+
+### Primary grid
+- Submitted matched six-task grid after the successful smoke:
+  - Command: `sbatch /src/accel_cycle5_grid.slurm`
+  - Job array: `8497957`
+  - Conditions: `baseline_all`, `adapter_head`, `adapter_head_headlr_0.1`, `adapter_head_headlr_0.03`, `alignment_lora_r4`, `alignment_lora_r8`.
+  - Last checked state: all six tasks pending on `gpu` for scheduler priority with `02:00:00` time limit and `64G` memory.
+
+### Conclusions and next questions
+- Differential LR, low-rank residual alignment, and diagnostics are implemented and smoke-tested without changing flags-off defaults.
+- The required pre-grid smoke caught and resolved two diagnostic-only dtype bugs before any long run.
+- The primary result is pending because grid `8497957` has not started. Once it completes, compare final `test/loss`, `test_fwd`, and `test_bwd` against Cycle 4 `baseline_all` (`2.69`, `0.487`, `0.343`) and `adapter_head` (`2.66`, `0.470`, `0.373`).
+- Treat cached validation and fixed-probe diagnostics as explanatory signals only; do not use cached train-shard validation for model selection.
