@@ -305,3 +305,87 @@ Cycle capacity-control grid `8495064` completed: all six tasks exited `0:0`, wit
 - Next compact run should compare `baseline_all` and the previously mixed `adapter_head` with `heldout_val_sessions=1` and parse explicit `val_metrics`; use final new-test metrics for selection, with held-out validation as a diagnostic.
 - If excluded validation tracks new-test behavior, use it to screen reliability/ROI-stratified voxel selection or explicit Procrustes/SRM-style functional alignment from common stimuli.
 - Do not revisit adapter-only, adapter priors, beta-std top-k masking, diffusion-prior tuning, larger decoders, Fourier augmentation, or blurred-CLIP schedules unless a new validation/reliability result justifies it.
+## 2026-05-20 08:35 EDT - Cycle 6 Held-Out Validation Selector Check
+
+### Plan executed
+- Read `/plan.md` at the start of the run and kept the cycle measurement-focused: no new architecture, no lower-head-LR, no LoRA, no reliability masks, no prior/diffusion changes.
+- Added `/src/accel_cycle6_heldout_val_smoke.slurm` for the required 1-hour smoke using train session `0`, held-out validation session `1`, `heldout_val_max_samples=75`, and 2 epochs.
+- Added `/src/accel_cycle6_heldout_val_grid.slurm` for the compact four-task grid:
+  - `baseline_all_heldout1`
+  - `adapter_head_heldout1`
+  - `baseline_all_heldout2`
+  - `adapter_head_heldout2`
+- Syntax checks passed:
+  - `/src/fmri/bin/python -m py_compile /src/Train.py`
+  - `bash -n /src/accel_cycle6_heldout_val_smoke.slurm`
+  - `bash -n /src/accel_cycle6_heldout_val_grid.slurm`
+- Best-heldout checkpoints were saved by existing `best_val.pth` logic. Separate best-checkpoint reload/new-test evaluation was not implemented this cycle because it would require broader eval-loop extraction; final/new-test rank agreement was used as planned.
+
+### Jobs launched
+- Smoke: `sbatch /src/accel_cycle6_heldout_val_smoke.slurm` -> job `8499774`.
+- Grid: `sbatch /src/accel_cycle6_heldout_val_grid.slurm` -> array `8499927`.
+
+### Smoke result
+- Job `8499774` completed cleanly: `COMPLETED`, `ExitCode=0:0`, `Elapsed=00:02:34`, batch `MaxRSS=21626104K`, under requested `32G`.
+- Confirmed held-out validation source and no train/validation shard overlap:
+  - training shard: `/wds/subj01/train/{0..0}.tar`
+  - validation shard: `/wds/subj01/train/{1..1}.tar`
+  - log: `Validation cache ready: source=heldout_train_sessions n=75 unique image/voxel pairs`
+- Parseable smoke validation:
+  - epoch 1: `val/loss=4.28962`, `val_fwd=0.106667`, `val_bwd=0.0266667`
+  - epoch 2: `val/loss=3.56854`, `val_fwd=0.186667`, `val_bwd=0.0666667`
+- Final smoke new-test metrics: `test/loss=4.68`, `test_fwd=0.110`, `test_bwd=0.0367`.
+- Final smoke train metrics: `train/loss=1.10`, `train_fwd=0.843`, `train_bwd=0.696`.
+
+### Grid job states
+- Array `8499927` completed cleanly for all four tasks with `ExitCode=0:0`.
+- Elapsed/RSS:
+  - task 0: `00:47:15`, `MaxRSS=21771056K`
+  - task 1: `00:46:19`, `MaxRSS=21626052K`
+  - task 2: `00:48:06`, `MaxRSS=21769988K`
+  - task 3: `00:48:34`, `MaxRSS=21766448K`
+- All tasks stayed below requested `64G`.
+
+### Final matched metrics
+
+| Condition | Task | Held-out sessions | Val n | Trainable params | Final val/loss | val_fwd | val_bwd | Final test/loss | test_fwd | test_bwd | train/loss | train_fwd | train_bwd |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| baseline_all_heldout1 | 0 | 1 | 75 | 469,462,680 | 2.09552 | 0.506667 | 0.400000 | 2.70 | 0.477 | 0.350 | 0.000211 | 1.000 | 1.000 |
+| adapter_head_heldout1 | 1 | 1 | 75 | 461,057,664 | 2.05662 | 0.520000 | 0.413333 | 2.65 | 0.483 | 0.333 | 0.000202 | 1.000 | 1.000 |
+| baseline_all_heldout2 | 2 | 2 | 150 | 469,462,680 | 2.87685 | 0.366667 | 0.286667 | 2.70 | 0.477 | 0.350 | 0.000211 | 1.000 | 1.000 |
+| adapter_head_heldout2 | 3 | 2 | 150 | 461,057,664 | 2.85590 | 0.346667 | 0.260000 | 2.65 | 0.483 | 0.333 | 0.000202 | 1.000 | 1.000 |
+
+### Best validation epochs
+- `baseline_all_heldout1`: best val loss at epoch 150, `val/loss=2.09552`, `val_fwd=0.506667`, `val_bwd=0.400000`.
+- `adapter_head_heldout1`: best val loss at epoch 148, `val/loss=2.05646`, `val_fwd=0.520000`, `val_bwd=0.413333`; final epoch was essentially tied at `2.05662`.
+- `baseline_all_heldout2`: best val loss at epoch 149, `val/loss=2.87672`, `val_fwd=0.366667`, `val_bwd=0.286667`; final epoch was essentially tied at `2.87685`.
+- `adapter_head_heldout2`: best val loss at epoch 150, `val/loss=2.85590`, `val_fwd=0.346667`, `val_bwd=0.260000`.
+
+### Rank agreement
+- Heldout-1:
+  - val loss ranks `adapter_head` better; new-test loss also ranks `adapter_head` better.
+  - val fwd ranks `adapter_head` better; new-test fwd also ranks `adapter_head` better.
+  - val bwd ranks `adapter_head` better; new-test bwd ranks `baseline_all` better.
+  - val mean retrieval ranks `adapter_head` better (`0.4667` vs `0.4533`); new-test mean retrieval ranks `baseline_all` slightly better (`0.4135` vs `0.4080`).
+- Heldout-2:
+  - val loss ranks `adapter_head` better; new-test loss also ranks `adapter_head` better.
+  - val fwd ranks `baseline_all` better; new-test fwd ranks `adapter_head` better.
+  - val bwd ranks `baseline_all` better; new-test bwd also ranks `baseline_all` better.
+  - val mean retrieval ranks `baseline_all` better (`0.3267` vs `0.3033`); new-test mean retrieval also ranks `baseline_all` slightly better (`0.4135` vs `0.4080`).
+
+### Conclusions
+- Held-out validation did not saturate: all final held-out retrieval values stayed far below `1.0`, unlike the old train-shard validation cache.
+- The validation selector is useful diagnostically but not yet reliable enough as a sole model-selection signal. It consistently agreed with final new-test loss, but retrieval agreement depended on the held-out window:
+  - heldout-1 agreed on loss and forward retrieval but missed backward and mean retrieval;
+  - heldout-2 agreed on loss, backward retrieval, and mean retrieval but missed forward retrieval.
+- Final new-test metrics reproduced Cycle 5 exactly for the overlapping conditions:
+  - `baseline_all`: `test/loss=2.70`, `test_fwd=0.477`, `test_bwd=0.350`
+  - `adapter_head`: `test/loss=2.65`, `test_fwd=0.483`, `test_bwd=0.333`
+- No Cycle 6 condition met model-side success criteria. `adapter_head` improved loss and forward retrieval but reduced backward retrieval by `0.017`; `baseline_all` remains the stronger balanced condition by mean retrieval and backward retrieval.
+- Because heldout-1 and heldout-2 disagree on retrieval direction, do not use a single excluded session as the next-cycle selector without fixing or broadening validation construction.
+
+### Recommended next research questions
+- Stop architecture search until validation is made more stable across held-out session choices.
+- Next validation work should enforce image-ID exclusion from the actual training loader and use either multiple excluded sessions, official repeat structure, or metadata-backed repeat/reliability splits.
+- If compute is limited, use heldout-2 or a multi-session aggregate rather than heldout-1 alone, because heldout-2 better matched new-test backward and mean retrieval in this cycle.
+- Continue to avoid diffusion-prior tuning, larger decoders, Fourier augmentation, blurred-CLIP schedules, adapter-only, adapter priors, beta-std top-k masking, lower-head-LR sweeps, and the current LoRA residual until a more reliable validation signal justifies them.
