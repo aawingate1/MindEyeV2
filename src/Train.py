@@ -239,11 +239,32 @@ parser.add_argument(
     "--proj_reg_modules", type=str, default="ridge",
     help="Comma-separated module-name prefixes to regularize, e.g. ridge or ridge,backbone.",
 )
+parser.add_argument(
+    "--relational_consistency", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable batchwise relational consistency loss. Default False preserves baseline behavior.",
+)
+parser.add_argument(
+    "--rel_lambda", type=float, default=0.0,
+    help="Weight for relational consistency loss.",
+)
+parser.add_argument(
+    "--rel_target", type=str, default="clip", choices=["clip", "teacher"],
+    help="Target similarity source for relational consistency.",
+)
+parser.add_argument(
+    "--rel_metric", type=str, default="sim_mse", choices=["sim_mse"],
+    help="Relational consistency metric.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
 else:
     args = parser.parse_args()
+
+if args.relational_consistency and args.rel_target == "teacher":
+    raise NotImplementedError(
+        "--rel_target=teacher is reserved for a frozen teacher path; use --rel_target=clip for Cycle 12."
+    )
 
 # create global variables without the args prefix
 for attribute_name in vars(args).keys():
@@ -712,6 +733,30 @@ def compute_proj_reg_stats(model, source_state):
     relative_drift_norm = drift_norm / source_norm.clamp_min(1e-12)
     return reg_loss, drift_norm, relative_drift_norm, matched
 
+def offdiag_values(matrix):
+    mask = ~torch.eye(matrix.shape[0], dtype=torch.bool, device=matrix.device)
+    return matrix[mask]
+
+def relational_consistency_stats(pred_norm, target_norm):
+    pred_sim = pred_norm.float() @ pred_norm.float().T
+    target_sim = target_norm.float() @ target_norm.float().T
+    pred_offdiag = offdiag_values(pred_sim)
+    target_offdiag = offdiag_values(target_sim)
+    rel_loss = torch.mean((pred_offdiag - target_offdiag) ** 2)
+    pred_centered = pred_offdiag - pred_offdiag.mean()
+    target_centered = target_offdiag - target_offdiag.mean()
+    denom = torch.sqrt(torch.sum(pred_centered ** 2) * torch.sum(target_centered ** 2)).clamp_min(1e-12)
+    rel_corr = torch.sum(pred_centered * target_centered) / denom
+    return rel_loss, rel_corr
+
+def relational_target_from_clip(clip_target_norm, perm=None, betas=None, select=None):
+    if perm is None or betas is None or select is None:
+        return clip_target_norm
+    rel_target = clip_target_norm.clone()
+    mixed = clip_target_norm * betas.reshape(-1, 1) + clip_target_norm[perm] * (1 - betas).reshape(-1, 1)
+    rel_target[select] = nn.functional.normalize(mixed[select], dim=-1)
+    return rel_target
+
 print("\nDone with model preparations!")
 num_params = utils.count_params(model)
 
@@ -744,6 +789,10 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "adapter_prior_type": adapter_prior_type,
       "proj_reg_lambda": proj_reg_lambda,
       "proj_reg_modules": proj_reg_modules,
+      "relational_consistency": relational_consistency,
+      "rel_lambda": rel_lambda,
+      "rel_target": rel_target,
+      "rel_metric": rel_metric,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -868,6 +917,13 @@ for epoch in progress_bar:
     proj_reg_drift_norm_total = 0.
     proj_reg_relative_drift_norm_total = 0.
     proj_reg_logged_steps = 0
+    rel_loss_total = 0.
+    rel_loss_scaled_total = 0.
+    rel_sim_corr_total = 0.
+    rel_logged_steps = 0
+    test_rel_loss_total = 0.
+    test_rel_sim_corr_total = 0.
+    test_rel_logged_steps = 0
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -971,9 +1027,28 @@ for epoch in progress_bar:
 
             backbone, clip_voxels, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
 
-            if clip_scale>0:
+            if clip_scale>0 or relational_consistency:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                 clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
+
+            if relational_consistency:
+                if rel_target == "clip":
+                    if epoch < int(mixup_pct * num_epochs):
+                        rel_target_norm = relational_target_from_clip(clip_target_norm, perm=perm, betas=betas, select=select)
+                    else:
+                        rel_target_norm = clip_target_norm
+                else:
+                    raise ValueError(f"Unknown rel_target: {rel_target}")
+                if rel_metric == "sim_mse":
+                    rel_loss, rel_sim_corr = relational_consistency_stats(clip_voxels_norm, rel_target_norm)
+                else:
+                    raise ValueError(f"Unknown rel_metric: {rel_metric}")
+                rel_loss_scaled = rel_loss * rel_lambda
+                loss += rel_loss_scaled
+                rel_loss_total += rel_loss.detach().float().item()
+                rel_loss_scaled_total += rel_loss_scaled.detach().float().item()
+                rel_sim_corr_total += rel_sim_corr.detach().float().item()
+                rel_logged_steps += 1
 
             if use_prior:
                 loss_prior, prior_out = model_for_submodules.diffusion_prior(text_embed=backbone, image_embed=clip_target)
@@ -1107,12 +1182,25 @@ for epoch in progress_bar:
                 clip_voxels /= 3
                 backbone /= 3
 
-                if clip_scale>0:
+                if clip_scale>0 or relational_consistency:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                     clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
                 # for some evals, only doing a subset of the samples per batch because of computational cost
                 random_samps = np.random.choice(np.arange(len(image)), size=len(image)//5, replace=False)
+
+                if relational_consistency:
+                    if rel_target == "clip":
+                        rel_target_norm = clip_target_norm
+                    else:
+                        raise ValueError(f"Unknown rel_target: {rel_target}")
+                    if rel_metric == "sim_mse":
+                        test_rel_loss, test_rel_sim_corr = relational_consistency_stats(clip_voxels_norm, rel_target_norm)
+                    else:
+                        raise ValueError(f"Unknown rel_metric: {rel_metric}")
+                    test_rel_loss_total += test_rel_loss.detach().float().item()
+                    test_rel_sim_corr_total += test_rel_sim_corr.detach().float().item()
+                    test_rel_logged_steps += 1
 
                 if use_prior:
                     loss_prior, contaminated_prior_out = model_for_submodules.diffusion_prior(text_embed=backbone[random_samps], image_embed=clip_target[random_samps])
@@ -1174,6 +1262,11 @@ for epoch in progress_bar:
                 "train/proj_reg_relative_drift_norm": proj_reg_relative_drift_norm_total / max(1, proj_reg_logged_steps),
                 "train/proj_reg_matched_tensors": len(proj_reg_state) if proj_reg_state is not None else 0,
                 "train/proj_reg_num_params": proj_reg_num_params,
+                "train/rel_loss": rel_loss_total / max(1, rel_logged_steps),
+                "train/rel_loss_scaled": rel_loss_scaled_total / max(1, rel_logged_steps),
+                "train/rel_sim_corr": rel_sim_corr_total / max(1, rel_logged_steps),
+                "test/rel_loss": test_rel_loss_total / max(1, test_rel_logged_steps),
+                "test/rel_sim_corr": test_rel_sim_corr_total / max(1, test_rel_logged_steps),
                 }
 
             # if finished training, save jpg recons if they exist

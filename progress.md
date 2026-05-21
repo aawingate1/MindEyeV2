@@ -769,3 +769,93 @@ Recommended next research questions:
 - Why does the local `lambda=0` one-session row outperform the official-control row so strongly for brain retrieval on subjects 5 and 7, despite being provenance-labeled as local training/config drift?
 - If projection anchoring is revisited, can a much smaller anchored subset preserve brain retrieval while reducing drift, or is the ridge map too coupled to sparse subject adaptation?
 - For subject 7 specifically, does the train-repeat reliability pattern support moving next to a reliability-aware or ROI-aware adaptation method rather than projection anchoring?
+
+## Cycle 12 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 12 relational-consistency implementation and experiment-launch path.
+- Telegram report was not due.
+- Preserved the Cycle 7 decision: ridge-wide `ridge` L2 projection anchoring at `1e-5`, `3e-5`, and `1e-4` failed the success rule and should not be scaled to subjects 1/2.
+- Kept provenance labels distinct: official paper-matched control, local Cycle 2 fine-tuned row, Cycle 7 same-code `lambda=0`, and Cycle 7 nonzero projection-anchored rows.
+- No generator/refiner changes, caption/VLM correction, temporal decoding, broad ROI routing, CLIP-layer fusion, high-capacity adapters, reliability weighting, or new projection-anchor grid was launched.
+
+Code/config changes:
+- Edited `/src/Train.py`.
+  - Added disabled-by-default CLI flags: `--relational_consistency`, `--rel_lambda`, `--rel_target`, and `--rel_metric`.
+  - Implemented `--rel_target=clip` and `--rel_metric=sim_mse`.
+  - Reserved `--rel_target=teacher` with an explicit `NotImplementedError` rather than silently changing the training path.
+  - Added off-diagonal batch similarity MSE on the normalized `clip_voxels.flatten(1)` prediction and normalized CLIP image target.
+  - During MixCo epochs, relational targets are mixed only for selected samples using the same `perm`, `betas`, and `select` tensors, then renormalized.
+  - Added logs for `train/rel_loss`, `train/rel_loss_scaled`, `train/rel_sim_corr`, `test/rel_loss`, and `test/rel_sim_corr`.
+  - Default behavior with no relational flags remains unchanged; no-rel control logs zero relational diagnostics.
+- Added Slurm scripts:
+  - `/src/cycle12_rel_smoke.slurm`: 1-hour two-task subject 5 smoke, no-rel control plus `rel_lambda=1e-3`.
+  - `/src/cycle12_rel_train_s57.slurm`: subjects 5/7, lambdas `0`, `1e-3`, `3e-3`, `1e-2`, 150 epochs, paper-matched one-session local settings.
+  - `/src/cycle12_rel_eval_s57.slurm`: dependent validated evaluator path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+
+Validation commands:
+- Ran `python -m py_compile /src/Train.py`: passed.
+- Ran `bash -n /src/cycle12_rel_smoke.slurm`: passed.
+- Ran `bash -n /src/cycle12_rel_train_s57.slurm`: passed.
+- Ran `bash -n /src/cycle12_rel_eval_s57.slurm`: passed.
+
+Smoke jobs:
+- Submitted `sbatch /src/cycle12_rel_smoke.slurm`: job `8549659`.
+- `8549659_0`: subject 5 no-rel control, model `cycle12_smoke_subj05_rel0_1sess_3ep`, `COMPLETED`, exit `0:0`, elapsed `00:05:59`, node `della-l05g7`, MaxRSS `22933044K`, stdout `/src/slurms/c12_rel_smoke_8549659_0.out`, stderr `/src/slurms/c12_rel_smoke_8549659_0.err`.
+- `8549659_1`: subject 5 relational `1e-3`, model `cycle12_smoke_subj05_rel1em3_1sess_3ep`, `COMPLETED`, exit `0:0`, elapsed `00:05:59`, node `della-l04g12`, MaxRSS `21471900K`, stdout `/src/slurms/c12_rel_smoke_8549659_1.out`, stderr `/src/slurms/c12_rel_smoke_8549659_1.err`.
+- Failure classification: none. The Slurm `couldn't chdir to /src` warning is the same non-fatal compute-mount warning observed in Cycle 7; scripts immediately `cd` to the scratch-visible source tree and completed normally.
+
+Smoke diagnostics:
+
+| smoke row | epoch | train loss | test loss | train/test blurry PixCorr | train fwd/bwd | test fwd/bwd | train rel loss | train rel scaled | train rel corr | test rel loss | test rel corr |
+|---|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|
+| subj05 rel0 | 1 | 15.2 | 14.9 | 0.183/0.231 | 0.387/0.159 | 0.153/0.040 | 0 | 0 | 0 | 0 | 0 |
+| subj05 rel0 | 2 | 11.5 | 11.4 | 0.254/0.227 | 0.898/0.754 | 0.380/0.203 | 0 | 0 | 0 | 0 | 0 |
+| subj05 rel0 | 3 | 11.4 | 13.1 | 0.341/0.250 | 0.992/0.972 | 0.407/0.283 | 0 | 0 | 0 | 0 | 0 |
+| subj05 rel1e-3 | 1 | 15.2 | 14.9 | 0.183/0.231 | 0.388/0.159 | 0.157/0.040 | 0.485 | 0.000485 | 0.158 | 0.373 | 0.221 |
+| subj05 rel1e-3 | 2 | 11.5 | 11.4 | 0.254/0.226 | 0.898/0.754 | 0.380/0.200 | 0.115 | 0.000115 | 0.246 | 0.180 | 0.271 |
+| subj05 rel1e-3 | 3 | 11.4 | 13.1 | 0.341/0.250 | 0.992/0.972 | 0.407/0.283 | 0.0268 | 0.0000268 | 0.284 | 0.160 | 0.283 |
+
+Smoke conclusion:
+- The relational loss is finite, nonzero, and logged when enabled.
+- The scaled relational term at `1e-3` is far below the base objective and does not dominate training.
+- Same-code no-rel control keeps relational diagnostics at zero and follows the expected Cycle 7 `lambda=0` short-run path.
+- Proceeded with the planned lambda grid without reducing lambdas.
+
+Full jobs launched:
+- Submitted `sbatch /src/cycle12_rel_train_s57.slurm`: training array job `8549927`.
+- Submitted `sbatch --dependency=afterok:8549927 /src/cycle12_rel_eval_s57.slurm`: dependent evaluator array job `8549929`.
+- Training model mapping:
+  - `8549927_0`: subject 5, `rel0`, `cycle12_subj05_rel0_1sess_150ep`.
+  - `8549927_1`: subject 5, `rel1em3`, `cycle12_subj05_rel1em3_1sess_150ep`.
+  - `8549927_2`: subject 5, `rel3em3`, `cycle12_subj05_rel3em3_1sess_150ep`.
+  - `8549927_3`: subject 5, `rel1em2`, `cycle12_subj05_rel1em2_1sess_150ep`.
+  - `8549927_4`: subject 7, `rel0`, `cycle12_subj07_rel0_1sess_150ep`.
+  - `8549927_5`: subject 7, `rel1em3`, `cycle12_subj07_rel1em3_1sess_150ep`.
+  - `8549927_6`: subject 7, `rel3em3`, `cycle12_subj07_rel3em3_1sess_150ep`.
+  - `8549927_7`: subject 7, `rel1em2`, `cycle12_subj07_rel1em2_1sess_150ep`.
+- Evaluation job `8549929_[0-7]` maps to the same model order and is pending on `afterok:8549927`.
+
+Slurm state at 2026-05-21 09:47 EDT:
+
+| task | subject | lambda | state | exit | node/reason | elapsed | stdout/stderr |
+|---|---:|---:|---|---|---|---|---|
+| `8549927_0` | 5 | `0` | RUNNING | `0:0` | `della-l05g5` | `00:00:51` | `/src/slurms/c12_rel_s57_8549927_0.out/.err` |
+| `8549927_1` | 5 | `1e-3` | RUNNING | `0:0` | `della-l04g15` | `00:00:51` | `/src/slurms/c12_rel_s57_8549927_1.out/.err` |
+| `8549927_2` | 5 | `3e-3` | RUNNING | `0:0` | `della-l04g14` | `00:00:51` | `/src/slurms/c12_rel_s57_8549927_2.out/.err` |
+| `8549927_3` | 5 | `1e-2` | RUNNING | `0:0` | `della-l03g3` | `00:00:18` | `/src/slurms/c12_rel_s57_8549927_3.out/.err` |
+| `8549927_4` | 7 | `0` | RUNNING | `0:0` | `della-l03g2` | `00:00:18` | `/src/slurms/c12_rel_s57_8549927_4.out/.err` |
+| `8549927_5` | 7 | `1e-3` | RUNNING | `0:0` | `della-l02g16` | `00:00:18` | `/src/slurms/c12_rel_s57_8549927_5.out/.err` |
+| `8549927_6` | 7 | `3e-3` | PENDING | `0:0` | `Priority` | `00:00:00` | `/src/slurms/c12_rel_s57_8549927_6.out/.err` expected |
+| `8549927_7` | 7 | `1e-2` | PENDING | `0:0` | `Priority` | `00:00:00` | `/src/slurms/c12_rel_s57_8549927_7.out/.err` expected |
+| `8549929_[0-7]` | 5/7 | all | PENDING | `0:0` | `Dependency` | `00:00:00` | `/src/slurms/c12_rel_eval_s57_8549929_<task>.out/.err` expected |
+
+Current metric status:
+- No Cycle 12 refined evaluation CSVs exist yet under `/src/tables`.
+- No PixCorr/SSIM/AlexNet/Inception/CLIP/EfficientNet/SwAV/image-retrieval/brain-retrieval/ROI-correlation rows are available yet for the full Cycle 12 models.
+- The next cycle should parse final training logs for relational diagnostics and then parse `cycle12_subj0{5,7}_rel{0,1em3,3em3,1em2}_1sess_150ep_all_enhancedrecons.csv` after evaluator job `8549929` completes.
+
+Recommended next research questions:
+- If relational consistency improves subject 5 brain retrieval without semantic or ROI damage, does subject 7 require reliability-aware voxel adaptation rather than stronger relational weighting?
+- If all relational rows match no-rel control, audit whether `clip_voxels.flatten(1)` is the only retrieval-relevant embedding used downstream in `recon_inference.py`.
+- If `1e-2` damages semantic metrics while `1e-3` or `3e-3` is neutral, narrow the grid rather than increasing the penalty.
