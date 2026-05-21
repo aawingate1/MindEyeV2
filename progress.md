@@ -603,3 +603,65 @@ Metric table status:
 Conclusion:
 - The Cycle 7 projection-drift sweep is no longer stale or invalid; it is actively running and producing regularization diagnostics.
 - The correct action was to monitor and not mutate the experiment. The next cycle should inspect final state for `8539988_[0-7]`; if all tasks complete, let or inspect dependent evaluator `8540137_[0-7]`. If evaluation fails or never launches, rerun only the validated Cycle 6 evaluator path for the exact completed model names.
+
+## Cycle 10 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 7 projection-drift recovery/readout path.
+- Telegram report is due; concise report-ready update is appended below.
+- No generator/refiner, temporal decoding, ROI routing, caption/VLM correction, reliability weighting, low-rank adapter, relational-consistency, or other second mechanism was started.
+
+Code/config changes:
+- No changes were made to `/src/Train.py`, `/src/models.py`, or any Slurm scripts.
+- No jobs were cancelled, resubmitted, or newly launched. The active training sweep is validly running, so the plan's instruction was to record status and not mutate the experiment.
+
+Commands/status checks:
+- Ran `squeue -j 8539988,8540137`.
+- Ran `sacct -j 8539988,8540137 --format=JobID,JobName%35,State,ExitCode,Elapsed,NodeList,MaxRSS,ReqMem,Submit,Start,End -P`.
+- Parsed `/src/slurms/c7_projreg_s57_8539988_<task>.out/.err` for subject/lambda mapping, current epoch, losses, blurry PixCorr, retrieval diagnostics, and projection-drift diagnostics.
+- Checked `/src/tables` for `cycle7_subj0*_projreg*_1sess_150ep` CSVs; none exist yet because evaluation has not started.
+
+Active Slurm state at 2026-05-21 04:54 EDT:
+
+| task | subject | lambda | state | exit | node | elapsed | stdout | stderr | expected checkpoint |
+|---|---:|---:|---|---|---|---|---|---|---|
+| `8539988_0` | 5 | `0` | RUNNING | `0:0` | `della-l03g3` | `01:11:17` | `/src/slurms/c7_projreg_s57_8539988_0.out` | `/src/slurms/c7_projreg_s57_8539988_0.err` | `../train_logs/cycle7_subj05_projreg0_1sess_150ep/last.pth` |
+| `8539988_1` | 5 | `1e-5` | RUNNING | `0:0` | `della-l03g6` | `01:07:42` | `/src/slurms/c7_projreg_s57_8539988_1.out` | `/src/slurms/c7_projreg_s57_8539988_1.err` | `../train_logs/cycle7_subj05_projreg1em5_1sess_150ep/last.pth` |
+| `8539988_2` | 5 | `3e-5` | RUNNING | `0:0` | `della-l02g3` | `01:06:10` | `/src/slurms/c7_projreg_s57_8539988_2.out` | `/src/slurms/c7_projreg_s57_8539988_2.err` | `../train_logs/cycle7_subj05_projreg3em5_1sess_150ep/last.pth` |
+| `8539988_3` | 5 | `1e-4` | RUNNING | `0:0` | `della-l04g7` | `01:03:38` | `/src/slurms/c7_projreg_s57_8539988_3.out` | `/src/slurms/c7_projreg_s57_8539988_3.err` | `../train_logs/cycle7_subj05_projreg1em4_1sess_150ep/last.pth` |
+| `8539988_4` | 7 | `0` | RUNNING | `0:0` | `della-l05g4` | `01:01:36` | `/src/slurms/c7_projreg_s57_8539988_4.out` | `/src/slurms/c7_projreg_s57_8539988_4.err` | `../train_logs/cycle7_subj07_projreg0_1sess_150ep/last.pth` |
+| `8539988_5` | 7 | `1e-5` | RUNNING | `0:0` | `della-l04g3` | `01:01:36` | `/src/slurms/c7_projreg_s57_8539988_5.out` | `/src/slurms/c7_projreg_s57_8539988_5.err` | `../train_logs/cycle7_subj07_projreg1em5_1sess_150ep/last.pth` |
+| `8539988_6` | 7 | `3e-5` | RUNNING | `0:0` | `della-l04g14` | `01:00:35` | `/src/slurms/c7_projreg_s57_8539988_6.out` | `/src/slurms/c7_projreg_s57_8539988_6.err` | `../train_logs/cycle7_subj07_projreg3em5_1sess_150ep/last.pth` |
+| `8539988_7` | 7 | `1e-4` | RUNNING | `0:0` | `della-l03g13` | `01:00:05` | `/src/slurms/c7_projreg_s57_8539988_7.out` | `/src/slurms/c7_projreg_s57_8539988_7.err` | `../train_logs/cycle7_subj07_projreg1em4_1sess_150ep/last.pth` |
+| `8540137_[0-7]` | 5/7 | `0,1e-5,3e-5,1e-4` | PENDING | `0:0` | none | `00:00:00` | `/src/slurms/c7_projreg_eval_s57_8540137_<task>.out` | `/src/slurms/c7_projreg_eval_s57_8540137_<task>.err` | dependent evaluator for completed checkpoints above |
+
+Failure classification:
+- Training array `8539988_[0-7]`: no failure observed. All tasks are running on assigned A100 nodes, loaded the intended `final_multisubject_subj0{5,7}/last.pth` checkpoint, and are writing epoch diagnostics.
+- Evaluation array `8540137_[0-7]`: no failure observed. It is still correctly pending on `afterok:8539988` and has not started.
+- Each training stderr includes Slurm's `couldn't chdir to /workspace` warning before the script `cd`s to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`; this remains non-fatal because training proceeds normally.
+
+Latest live training diagnostics:
+
+| task | subject | lambda | latest epoch | train loss | test loss | train/test blurry PixCorr | train fwd/bwd | test fwd/bwd | unscaled reg | scaled reg | drift norm | relative drift | matched tensors | selected params |
+|---|---:|---:|---:|---:|---:|---|---|---|---:|---:|---:|---:|---:|---:|
+| `8539988_0` | 5 | `0` | 75/150 | `7.27` | `15.1` | `0.747/0.222` | `1.000/1.000` | `0.603/0.507` | `0` | `0` | `0` | `0` | 0 | 0 |
+| `8539988_1` | 5 | `1e-5` | 71/150 | `7.97` | `16.9` | `0.747/0.206` | `1.000/1.000` | `0.613/0.483` | `1.14e3` | `0.0114` | `33.8` | `0.911` | 2 | `5.34e7` |
+| `8539988_2` | 5 | `3e-5` | 70/150 | `8.49` | `15.2` | `0.741/0.133` | `1.000/1.000` | `0.600/0.477` | `1.02e3` | `0.0307` | `32.0` | `0.863` | 2 | `5.34e7` |
+| `8539988_3` | 5 | `1e-4` | 67/150 | `8.78` | `15.7` | `0.718/0.191` | `1.000/1.000` | `0.603/0.453` | `821` | `0.0821` | `28.7` | `0.773` | 2 | `5.34e7` |
+| `8539988_4` | 7 | `0` | 64/150 | `8.13` | `13.0` | `0.726/0.228` | `1.000/1.000` | `0.687/0.500` | `0` | `0` | `0` | `0` | 0 | 0 |
+| `8539988_5` | 7 | `1e-5` | 65/150 | `8.67` | `16.4` | `0.721/0.229` | `1.000/1.000` | `0.653/0.490` | `1.19e3` | `0.0119` | `34.4` | `0.930` | 2 | `5.19e7` |
+| `8539988_6` | 7 | `3e-5` | 63/150 | `8.22` | `16.0` | `0.708/0.142` | `1.000/1.000` | `0.663/0.483` | `1.08e3` | `0.0324` | `32.9` | `0.887` | 2 | `5.19e7` |
+| `8539988_7` | 7 | `1e-4` | 62/150 | `8.61` | `16.0` | `0.688/0.216` | `1.000/1.000` | `0.633/0.463` | `865` | `0.0865` | `29.4` | `0.794` | 2 | `5.19e7` |
+
+Metric table status:
+- No refined Cycle 7 projection-drift CSV rows exist yet for `lambda=0`, `1e-5`, `3e-5`, or `1e-4`.
+- Because `8540137_[0-7]` has not started, there are still no PixCorr/SSIM/AlexNet/Inception/CLIP/EfficientNet/SwAV/image-retrieval/brain-retrieval/ROI-correlation rows for the projection-regularized sweep.
+- The official-control and local Cycle 2 weak-subject rows from Cycle 8 remain the only completed controls; no valid lambda ranking or weak-subject mean table can be produced yet.
+
+Conclusion and decision:
+- The Cycle 7 projection-drift sweep is actively running and has not failed, so no repair or rerun was appropriate in Cycle 10.
+- Early live diagnostics do not justify a scientific decision; several regularized arms show lower or noisier same-epoch test retrieval than `lambda=0`, but these are mid-run training diagnostics and not final refined metrics.
+- Do not scale to subjects 1/2 and do not launch a new mechanism. The next valid action is to inspect final state for `8539988_[0-7]`; if all training tasks complete, let `8540137_[0-7]` run. If evaluation fails, rerun only the validated Cycle 6 evaluator path for the exact Cycle 7 model names.
+
+Telegram-ready update:
+Cycle 10 monitored the active Cycle 7 projection-drift sweep only. All eight training tasks `8539988_[0-7]` are running on A100 nodes with no observed failures; subjects 5 and 7 are being trained at lambdas `0`, `1e-5`, `3e-5`, and `1e-4`. The dependent evaluation array `8540137_[0-7]` is still pending correctly on `afterok:8539988`, so no refined CSV metrics or plots exist yet. Latest mid-run epochs are roughly 62-75/150. The regularizer is active in nonzero arms with 2 matched ridge tensors, about `5.19e7-5.34e7` selected params, drift norms around `28.7-34.4`, and scaled regularization losses around `0.011-0.087`. No jobs were changed or relaunched because the sweep is validly running. Next report should parse final training logs and the dependent refined evaluation tables once `8540137` finishes.
