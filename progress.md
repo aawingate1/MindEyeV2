@@ -665,3 +665,107 @@ Conclusion and decision:
 
 Telegram-ready update:
 Cycle 10 monitored the active Cycle 7 projection-drift sweep only. All eight training tasks `8539988_[0-7]` are running on A100 nodes with no observed failures; subjects 5 and 7 are being trained at lambdas `0`, `1e-5`, `3e-5`, and `1e-4`. The dependent evaluation array `8540137_[0-7]` is still pending correctly on `afterok:8539988`, so no refined CSV metrics or plots exist yet. Latest mid-run epochs are roughly 62-75/150. The regularizer is active in nonzero arms with 2 matched ridge tensors, about `5.19e7-5.34e7` selected params, drift norms around `28.7-34.4`, and scaled regularization losses around `0.011-0.087`. No jobs were changed or relaunched because the sweep is validly running. Next report should parse final training logs and the dependent refined evaluation tables once `8540137` finishes.
+
+## Cycle 11 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only Cycle 7 projection-drift recovery/readout.
+- Telegram report was not due.
+- No reliability weighting, relational consistency, CLIP-layer fusion, low-rank adapter, generator/refiner, ROI routing, temporal decoding, caption/VLM correction, or other second mechanism was started.
+
+Code/config changes:
+- No changes were made to `/src/Train.py`, `/src/models.py`, or Slurm scripts in Cycle 11.
+- No jobs were cancelled, resubmitted, or newly launched. The active training and evaluation arrays were valid, so the correct action was to monitor and parse them.
+
+Operational visibility:
+- This shell could query `squeue`/`sacct` and read `/src`, but the compute-side path `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/...` was not mounted locally. This did not block execution because all Slurm tasks ran on compute nodes and wrote logs/tables visible under `/src`.
+
+Commands/status checks:
+- Ran `squeue -j 8539988,8540137`.
+- Ran `sacct -j 8539988,8540137 --format=JobID,JobName,State,ExitCode,NodeList,Elapsed,Start,End,ReqMem,MaxRSS -P`.
+- Parsed `/src/slurms/c7_projreg_s57_8539988_<task>.err` for final train/test losses, blurry PixCorr, retrieval diagnostics, and projection-drift diagnostics.
+- Parsed `/src/tables/cycle7_subj0{5,7}_projreg{0,1em5,3em5,1em4}_1sess_150ep_all_enhancedrecons.csv`.
+
+Final Slurm status and failure classification:
+
+| task | subject | lambda | state | exit | node | elapsed | stdout/stderr | expected checkpoint/artifacts | failure class |
+|---|---:|---:|---|---|---|---|---|---|---|
+| `8539988_0` | 5 | `0` | COMPLETED | `0:0` | `della-l03g3` | `02:18:43` | `/src/slurms/c7_projreg_s57_8539988_0.out/.err` | `cycle7_subj05_projreg0_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_1` | 5 | `1e-5` | COMPLETED | `0:0` | `della-l03g6` | `02:18:39` | `/src/slurms/c7_projreg_s57_8539988_1.out/.err` | `cycle7_subj05_projreg1em5_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_2` | 5 | `3e-5` | COMPLETED | `0:0` | `della-l02g3` | `02:18:02` | `/src/slurms/c7_projreg_s57_8539988_2.out/.err` | `cycle7_subj05_projreg3em5_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_3` | 5 | `1e-4` | COMPLETED | `0:0` | `della-l04g7` | `02:18:11` | `/src/slurms/c7_projreg_s57_8539988_3.out/.err` | `cycle7_subj05_projreg1em4_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_4` | 7 | `0` | COMPLETED | `0:0` | `della-l05g4` | `02:18:35` | `/src/slurms/c7_projreg_s57_8539988_4.out/.err` | `cycle7_subj07_projreg0_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_5` | 7 | `1e-5` | COMPLETED | `0:0` | `della-l04g3` | `02:18:31` | `/src/slurms/c7_projreg_s57_8539988_5.out/.err` | `cycle7_subj07_projreg1em5_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_6` | 7 | `3e-5` | COMPLETED | `0:0` | `della-l04g14` | `02:18:28` | `/src/slurms/c7_projreg_s57_8539988_6.out/.err` | `cycle7_subj07_projreg3em5_1sess_150ep` checkpoint used by evaluator | none |
+| `8539988_7` | 7 | `1e-4` | COMPLETED | `0:0` | `della-l03g13` | `02:18:54` | `/src/slurms/c7_projreg_s57_8539988_7.out/.err` | `cycle7_subj07_projreg1em4_1sess_150ep` checkpoint used by evaluator | none |
+| `8540137_0` | 5 | `0` | COMPLETED | `0:0` | `della-l05g5` | `02:23:30` | `/src/slurms/c7_projreg_eval_s57_8540137_0.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_1` | 5 | `1e-5` | COMPLETED | `0:0` | `della-l02g1` | `02:26:13` | `/src/slurms/c7_projreg_eval_s57_8540137_1.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_2` | 5 | `3e-5` | COMPLETED | `0:0` | `della-l02g4` | `02:26:04` | `/src/slurms/c7_projreg_eval_s57_8540137_2.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_3` | 5 | `1e-4` | COMPLETED | `0:0` | `della-l03g3` | `02:26:19` | `/src/slurms/c7_projreg_eval_s57_8540137_3.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_4` | 7 | `0` | COMPLETED | `0:0` | `della-l03g10` | `02:27:26` | `/src/slurms/c7_projreg_eval_s57_8540137_4.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_5` | 7 | `1e-5` | COMPLETED | `0:0` | `della-l03g9` | `02:23:00` | `/src/slurms/c7_projreg_eval_s57_8540137_5.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_6` | 7 | `3e-5` | COMPLETED | `0:0` | `della-l05g1` | `02:23:47` | `/src/slurms/c7_projreg_eval_s57_8540137_6.out/.err` | CSV and enhanced recon tensor written | none |
+| `8540137_7` | 7 | `1e-4` | COMPLETED | `0:0` | `della-l04g8` | `02:25:32` | `/src/slurms/c7_projreg_eval_s57_8540137_7.out/.err` | CSV and enhanced recon tensor written | none |
+
+Final training diagnostics:
+
+| subject | lambda | test loss | test blurry PixCorr | test fwd/bwd | train loss | train blurry PixCorr | train fwd/bwd | unscaled reg | scaled reg | drift norm | relative drift | matched tensors | selected params |
+|---:|---:|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|---:|
+| 5 | `0` | 14.5 | 0.198 | 0.657/0.553 | 5.89 | 0.800 | 1.000/1.000 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 5 | `1e-5` | 14.5 | 0.202 | 0.663/0.543 | 5.90 | 0.800 | 1.000/1.000 | 1210 | 0.0121 | 34.8 | 0.938 | 2 | 5.34e7 |
+| 5 | `3e-5` | 14.5 | 0.187 | 0.633/0.520 | 5.94 | 0.798 | 1.000/1.000 | 978 | 0.0293 | 31.3 | 0.843 | 2 | 5.34e7 |
+| 5 | `1e-4` | 14.8 | 0.191 | 0.667/0.483 | 6.00 | 0.797 | 1.000/1.000 | 554 | 0.0554 | 23.5 | 0.635 | 2 | 5.34e7 |
+| 7 | `0` | 14.3 | 0.234 | 0.747/0.570 | 5.94 | 0.788 | 1.000/1.000 | 0 | 0 | 0 | 0 | 0 | 0 |
+| 7 | `1e-5` | 14.3 | 0.252 | 0.717/0.560 | 5.95 | 0.787 | 1.000/1.000 | 1300 | 0.0130 | 36.1 | 0.975 | 2 | 5.19e7 |
+| 7 | `3e-5` | 14.4 | 0.239 | 0.707/0.530 | 5.98 | 0.788 | 1.000/1.000 | 1060 | 0.0319 | 32.6 | 0.880 | 2 | 5.19e7 |
+| 7 | `1e-4` | 14.5 | 0.223 | 0.713/0.480 | 6.06 | 0.783 | 1.000/1.000 | 596 | 0.0596 | 24.4 | 0.659 | 2 | 5.19e7 |
+
+Subject-wise refined metrics:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| official subj05 | 0.175138 | 0.405438 | 0.831098 | 0.910006 | 0.843287 | 0.825327 | 0.781252 | 0.444283 | 0.669222 | 0.469667 | 0.403527 | 0.328285 | 0.335762 | 0.323165 | 0.303573 | 0.414595 |
+| Cycle 2/local subj05 | 0.198452 | 0.412553 | 0.848701 | 0.918145 | 0.856925 | 0.846210 | 0.759550 | 0.430057 | 0.648778 | 0.535778 | 0.414329 | 0.345305 | 0.350450 | 0.334916 | 0.312673 | 0.423239 |
+| lambda0 subj05 | 0.198452 | 0.412553 | 0.848701 | 0.918145 | 0.856925 | 0.846210 | 0.759550 | 0.430057 | 0.648778 | 0.535778 | 0.414329 | 0.345305 | 0.350450 | 0.334916 | 0.312673 | 0.423239 |
+| lambda1e-5 subj05 | 0.187435 | 0.410105 | 0.836173 | 0.912912 | 0.859159 | 0.845757 | 0.770829 | 0.434232 | 0.655444 | 0.517889 | 0.412533 | 0.343205 | 0.348078 | 0.332631 | 0.310461 | 0.422432 |
+| lambda3e-5 subj05 | 0.191910 | 0.409869 | 0.845924 | 0.915991 | 0.854605 | 0.844619 | 0.766937 | 0.432970 | 0.642333 | 0.499333 | 0.410567 | 0.339292 | 0.345890 | 0.330353 | 0.309711 | 0.419768 |
+| lambda1e-4 subj05 | 0.191268 | 0.411556 | 0.822008 | 0.900380 | 0.845233 | 0.828622 | 0.781932 | 0.438265 | 0.646667 | 0.431778 | 0.405016 | 0.326635 | 0.336490 | 0.324731 | 0.309751 | 0.417789 |
+| official subj07 | 0.169830 | 0.408449 | 0.807004 | 0.858992 | 0.749044 | 0.742868 | 0.854014 | 0.503689 | 0.644444 | 0.378111 | 0.293540 | 0.283393 | 0.285332 | 0.271559 | 0.243048 | 0.285348 |
+| Cycle 2/local subj07 | 0.200331 | 0.405877 | 0.826426 | 0.889542 | 0.775259 | 0.770100 | 0.830555 | 0.478162 | 0.691222 | 0.547222 | 0.317326 | 0.321064 | 0.323698 | 0.313173 | 0.281722 | 0.300001 |
+| lambda0 subj07 | 0.200331 | 0.405877 | 0.826426 | 0.889542 | 0.775259 | 0.770100 | 0.830555 | 0.478162 | 0.691222 | 0.547222 | 0.317326 | 0.321064 | 0.323698 | 0.313173 | 0.281722 | 0.300001 |
+| lambda1e-5 subj07 | 0.188403 | 0.408402 | 0.820619 | 0.881425 | 0.779218 | 0.759334 | 0.833629 | 0.486234 | 0.675778 | 0.514444 | 0.313782 | 0.316000 | 0.320073 | 0.313825 | 0.274364 | 0.298592 |
+| lambda3e-5 subj07 | 0.204717 | 0.405263 | 0.823024 | 0.883913 | 0.775582 | 0.773722 | 0.829963 | 0.478411 | 0.678000 | 0.509000 | 0.317400 | 0.317305 | 0.316743 | 0.310857 | 0.273364 | 0.302353 |
+| lambda1e-4 subj07 | 0.194194 | 0.400118 | 0.803316 | 0.864714 | 0.757584 | 0.753395 | 0.845851 | 0.492464 | 0.665889 | 0.452222 | 0.304163 | 0.301064 | 0.301102 | 0.295333 | 0.259155 | 0.290992 |
+
+Weak-subject means:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| official weak mean | 0.172484 | 0.406944 | 0.819051 | 0.884499 | 0.796166 | 0.784098 | 0.817633 | 0.473986 | 0.656833 | 0.423889 | 0.348533 | 0.305839 | 0.310547 | 0.297362 | 0.273311 | 0.349971 |
+| Cycle 2/local weak mean | 0.199392 | 0.409215 | 0.837564 | 0.903843 | 0.816092 | 0.808155 | 0.795053 | 0.454109 | 0.670000 | 0.541500 | 0.365828 | 0.333184 | 0.337074 | 0.324045 | 0.297198 | 0.361620 |
+| lambda0 weak mean | 0.199392 | 0.409215 | 0.837564 | 0.903843 | 0.816092 | 0.808155 | 0.795053 | 0.454109 | 0.670000 | 0.541500 | 0.365828 | 0.333184 | 0.337074 | 0.324045 | 0.297198 | 0.361620 |
+| lambda1e-5 weak mean | 0.187919 | 0.409254 | 0.828396 | 0.897169 | 0.819189 | 0.802546 | 0.802229 | 0.460233 | 0.665611 | 0.516167 | 0.363157 | 0.329603 | 0.334075 | 0.323228 | 0.292412 | 0.360512 |
+| lambda3e-5 weak mean | 0.198314 | 0.407566 | 0.834474 | 0.899952 | 0.815093 | 0.809170 | 0.798450 | 0.455690 | 0.660167 | 0.504167 | 0.363983 | 0.328298 | 0.331316 | 0.320605 | 0.291537 | 0.361060 |
+| lambda1e-4 weak mean | 0.192731 | 0.405837 | 0.812662 | 0.882547 | 0.801408 | 0.791009 | 0.813891 | 0.465365 | 0.656278 | 0.442000 | 0.354590 | 0.313849 | 0.318796 | 0.310032 | 0.284453 | 0.354390 |
+
+Primary deltas versus same-code `lambda=0`:
+- Subject 5 brain retrieval: `1e-5` `-0.017889`, `3e-5` `-0.036444`, `1e-4` `-0.104000`.
+- Subject 7 brain retrieval: `1e-5` `-0.032778`, `3e-5` `-0.038222`, `1e-4` `-0.095000`.
+- Weak-subject mean brain retrieval: `1e-5` `-0.025333`, `3e-5` `-0.037333`, `1e-4` `-0.099500`.
+- `1e-4` also damages CLIP, Inception, image retrieval, visual cortex, and higher visual on both subjects relative to `lambda=0`.
+- `3e-5` slightly improves subject 7 PixCorr, CLIP, visual cortex, and higher visual, but reduces subject 7 brain retrieval by `0.038222`; by the plan, PixCorr/SSIM/ROI-only gains do not count.
+
+Interpretation:
+- The same-code `lambda=0` rows exactly reproduce the stronger Cycle 2 local rows for subjects 5 and 7, so the Cycle 7 readout is not suffering from a local-control regression.
+- Moderate or strong ridge anchoring is not promising under the plan's success rule. No nonzero lambda improves brain retrieval by about `0.02` absolute on either weak subject; all nonzero lambdas reduce brain retrieval versus `lambda=0`.
+- The pattern is consistent with anchoring acting as an underfitting or geometry-disrupting constraint rather than a useful anti-drift prior in this setup. Drift norms still become large for `1e-5` and `3e-5`, while brain retrieval worsens; `1e-4` reduces drift more but clearly damages retrieval and semantic metrics.
+
+Decision:
+- Do not scale projection-drift anchoring to subjects 1/2.
+- Stop the current ridge-wide projection-anchoring grid as a candidate improvement.
+- If this mechanism is revisited, narrow/debug rather than scale: test a smaller lambda such as `3e-6` or anchor a smaller ridge subset only after confirming that the anchored tensors are the intended effective bottleneck. Based on this cycle, the next main mechanism should not be ridge-wide projection anchoring.
+
+Recommended next research questions:
+- Why does the local `lambda=0` one-session row outperform the official-control row so strongly for brain retrieval on subjects 5 and 7, despite being provenance-labeled as local training/config drift?
+- If projection anchoring is revisited, can a much smaller anchored subset preserve brain retrieval while reducing drift, or is the ridge map too coupled to sparse subject adaptation?
+- For subject 7 specifically, does the train-repeat reliability pattern support moving next to a reliability-aware or ROI-aware adaptation method rather than projection anchoring?
