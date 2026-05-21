@@ -983,3 +983,125 @@ Recommended next research questions:
 - Do all eight training tasks complete within the 3-hour request, and does the dependent evaluator start automatically?
 - Once final CSVs are written, does any nonzero relational row improve brain retrieval by about 0.02 absolute versus same-subject `rel0` without semantic, distance, retrieval, or ROI damage?
 - If training finishes but any evaluator row fails or is missing, rerun only `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` for that exact model.
+
+## Cycle 15 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 12 relational-consistency recovery/readout path.
+- Telegram report was not due.
+- No code, model, evaluator, or Slurm script changes were made.
+- No new mechanism was launched.
+
+Operational status:
+- All eight Cycle 12 training tasks completed successfully.
+- All eight dependent evaluator tasks completed successfully through `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+- Failure classification for all eight rows: none.
+- The recurring compute-side `couldn't chdir to /src` warning remained non-fatal; scripts changed to the scratch-visible source tree and completed.
+- The planning shell could read final `/src/evals` and `/src/tables` artifacts after evaluation. It could not reliably stat live compute-side checkpoints during training, but each evaluator loaded its expected `../train_logs/<model_name>/last.pth` checkpoint before writing outputs.
+
+Commands/status checks:
+- `squeue -j 8549927,8549929`
+- `sacct -j 8549927,8549929 --format=JobID,JobName,State,ExitCode,Elapsed,MaxRSS,NodeList,Reason --parsable2`
+- Parsed `/src/slurms/c12_rel_s57_8549927_<task>.err` for final train/test diagnostics.
+- Parsed `/src/slurms/c12_rel_eval_s57_8549929_<task>.out/.err` for evaluator completion and final metric prints.
+- Read final CSVs from `/src/tables/cycle12_subj0{5,7}_rel{0,1em3,3em3,1em2}_1sess_150ep_all_enhancedrecons.csv`.
+
+Training/evaluation job states:
+
+| task | model | state | elapsed | MaxRSS | node | artifacts |
+|---|---|---|---:|---:|---|---|
+| `8549927_0` | `cycle12_subj05_rel0_1sess_150ep` | `COMPLETED 0:0` | `02:19:58` | `21465840K` | `della-l05g5` | final CSV and enhanced recon present |
+| `8549927_1` | `cycle12_subj05_rel1em3_1sess_150ep` | `COMPLETED 0:0` | `02:20:00` | `21611572K` | `della-l04g15` | final CSV and enhanced recon present |
+| `8549927_2` | `cycle12_subj05_rel3em3_1sess_150ep` | `COMPLETED 0:0` | `02:20:01` | `21467420K` | `della-l04g14` | final CSV and enhanced recon present |
+| `8549927_3` | `cycle12_subj05_rel1em2_1sess_150ep` | `COMPLETED 0:0` | `02:19:25` | `21915092K` | `della-l03g3` | final CSV and enhanced recon present |
+| `8549927_4` | `cycle12_subj07_rel0_1sess_150ep` | `COMPLETED 0:0` | `02:17:02` | `22894032K` | `della-l03g2` | final CSV and enhanced recon present |
+| `8549927_5` | `cycle12_subj07_rel1em3_1sess_150ep` | `COMPLETED 0:0` | `02:17:06` | `21573536K` | `della-l02g16` | final CSV and enhanced recon present |
+| `8549927_6` | `cycle12_subj07_rel3em3_1sess_150ep` | `COMPLETED 0:0` | `02:17:26` | `22942796K` | `della-l02g12` | final CSV and enhanced recon present |
+| `8549927_7` | `cycle12_subj07_rel1em2_1sess_150ep` | `COMPLETED 0:0` | `02:17:31` | `21584748K` | `della-l02g11` | final CSV and enhanced recon present |
+| `8549929_0` | `cycle12_subj05_rel0_1sess_150ep` | `COMPLETED 0:0` | `02:23:55` | `49258772K` | `della-l05g7` | `/src/tables/cycle12_subj05_rel0_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_1` | `cycle12_subj05_rel1em3_1sess_150ep` | `COMPLETED 0:0` | `02:24:23` | `46261796K` | `della-l05g5` | `/src/tables/cycle12_subj05_rel1em3_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_2` | `cycle12_subj05_rel3em3_1sess_150ep` | `COMPLETED 0:0` | `02:24:55` | `49358376K` | `della-l04g15` | `/src/tables/cycle12_subj05_rel3em3_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_3` | `cycle12_subj05_rel1em2_1sess_150ep` | `COMPLETED 0:0` | `02:25:11` | `49406004K` | `della-l05g2` | `/src/tables/cycle12_subj05_rel1em2_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_4` | `cycle12_subj07_rel0_1sess_150ep` | `COMPLETED 0:0` | `02:23:08` | `47235392K` | `della-l04g14` | `/src/tables/cycle12_subj07_rel0_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_5` | `cycle12_subj07_rel1em3_1sess_150ep` | `COMPLETED 0:0` | `02:23:09` | `47502640K` | `della-l04g14` | `/src/tables/cycle12_subj07_rel1em3_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_6` | `cycle12_subj07_rel3em3_1sess_150ep` | `COMPLETED 0:0` | `02:31:51` | `49444132K` | `della-l04g1` | `/src/tables/cycle12_subj07_rel3em3_1sess_150ep_all_enhancedrecons.csv` |
+| `8549929_7` | `cycle12_subj07_rel1em2_1sess_150ep` | `COMPLETED 0:0` | `02:25:07` | `46342456K` | `della-l03g3` | `/src/tables/cycle12_subj07_rel1em2_1sess_150ep_all_enhancedrecons.csv` |
+
+Final training diagnostics:
+
+| row | test loss | test PixCorr | test fwd/bwd | train loss | train PixCorr | train rel loss | scaled rel | train rel corr | test rel loss | test rel corr |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| subj05 rel0 | 14.5 | 0.198 | 0.657/0.553 | 5.89 | 0.800 | 0 | 0 | 0 | 0 | 0 |
+| subj05 rel1e-3 | 14.5 | 0.190 | 0.637/0.553 | 5.88 | 0.801 | 0.0286 | 2.86e-5 | 0.335 | 0.0821 | 0.318 |
+| subj05 rel3e-3 | 14.4 | 0.186 | 0.677/0.543 | 5.91 | 0.800 | 0.0289 | 8.67e-5 | 0.332 | 0.0716 | 0.328 |
+| subj05 rel1e-2 | 14.5 | 0.194 | 0.673/0.570 | 5.90 | 0.799 | 0.0208 | 2.08e-4 | 0.337 | 0.0959 | 0.320 |
+| subj07 rel0 | 14.3 | 0.234 | 0.747/0.570 | 5.94 | 0.788 | 0 | 0 | 0 | 0 | 0 |
+| subj07 rel1e-3 | 14.2 | 0.219 | 0.727/0.597 | 5.93 | 0.788 | 0.0318 | 3.18e-5 | 0.308 | 0.0814 | 0.268 |
+| subj07 rel3e-3 | 14.3 | 0.221 | 0.757/0.543 | 5.93 | 0.781 | 0.0282 | 8.45e-5 | 0.316 | 0.0980 | 0.270 |
+| subj07 rel1e-2 | 14.3 | 0.225 | 0.737/0.523 | 5.93 | 0.788 | 0.0202 | 2.02e-4 | 0.321 | 0.1200 | 0.277 |
+
+Training-diagnostic checks:
+- `rel0` rows logged zero relational diagnostics.
+- Nonzero rows logged finite relational losses and finite train/test similarity correlations.
+- The relational term stayed tiny relative to the base objective at all tested lambdas.
+
+Final refined metrics, subject 5:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| subj05 rel0 | 0.198452 | 0.412553 | 0.848701 | 0.918145 | 0.856925 | 0.846210 | 0.759550 | 0.430057 | 0.648778 | 0.535778 | 0.414329 | 0.345305 | 0.350450 | 0.334916 | 0.312673 | 0.423239 |
+| subj05 rel1e-3 | 0.187441 | 0.414308 | 0.847139 | 0.917372 | 0.859084 | 0.843295 | 0.767757 | 0.431824 | 0.639333 | 0.526000 | 0.412454 | 0.347917 | 0.354858 | 0.337126 | 0.312403 | 0.421132 |
+| subj05 rel3e-3 | 0.191241 | 0.415813 | 0.842435 | 0.921072 | 0.857290 | 0.844147 | 0.768463 | 0.431831 | 0.660000 | 0.526222 | 0.411674 | 0.340972 | 0.350501 | 0.335578 | 0.312085 | 0.421737 |
+| subj05 rel1e-2 | 0.200522 | 0.415293 | 0.839455 | 0.917371 | 0.865186 | 0.842430 | 0.767671 | 0.429910 | 0.660222 | 0.525333 | 0.413880 | 0.351519 | 0.356984 | 0.340144 | 0.314392 | 0.420878 |
+
+Final refined metrics, subject 7:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| subj07 rel0 | 0.200331 | 0.405877 | 0.826426 | 0.889542 | 0.775259 | 0.770100 | 0.830555 | 0.478162 | 0.691222 | 0.547222 | 0.317326 | 0.321064 | 0.323698 | 0.313173 | 0.281722 | 0.300001 |
+| subj07 rel1e-3 | 0.201250 | 0.403458 | 0.827532 | 0.893929 | 0.786837 | 0.782383 | 0.822688 | 0.473255 | 0.684444 | 0.561556 | 0.317221 | 0.318054 | 0.319379 | 0.312152 | 0.278774 | 0.299809 |
+| subj07 rel3e-3 | 0.195962 | 0.401322 | 0.817856 | 0.887415 | 0.782259 | 0.776850 | 0.825701 | 0.478171 | 0.692222 | 0.532111 | 0.320165 | 0.322570 | 0.325068 | 0.315844 | 0.280332 | 0.304207 |
+| subj07 rel1e-2 | 0.199021 | 0.404358 | 0.824430 | 0.891920 | 0.790353 | 0.783824 | 0.817865 | 0.471761 | 0.688000 | 0.504333 | 0.315187 | 0.309740 | 0.310752 | 0.304774 | 0.269459 | 0.301732 |
+
+Primary deltas versus same-subject `rel0`:
+
+| row | brain retrieval | image retrieval | CLIP | Inception | EffNet dist | SwAV dist | visual cortex | higher visual |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 rel1e-3 | -0.009778 | -0.009444 | -0.002915 | +0.002159 | +0.008206 | +0.001766 | -0.001875 | -0.002108 |
+| subj05 rel3e-3 | -0.009556 | +0.011222 | -0.002063 | +0.000365 | +0.008913 | +0.001774 | -0.002655 | -0.001502 |
+| subj05 rel1e-2 | -0.010444 | +0.011444 | -0.003780 | +0.008261 | +0.008121 | -0.000148 | -0.000449 | -0.002361 |
+| subj07 rel1e-3 | +0.014333 | -0.006778 | +0.012283 | +0.011578 | -0.007866 | -0.004907 | -0.000105 | -0.000192 |
+| subj07 rel3e-3 | -0.015111 | +0.001000 | +0.006750 | +0.007000 | -0.004854 | +0.000009 | +0.002839 | +0.004206 |
+| subj07 rel1e-2 | -0.042889 | -0.003222 | +0.013724 | +0.015094 | -0.012690 | -0.006401 | -0.002139 | +0.001731 |
+
+Weak-subject means:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| weak rel0 | 0.199392 | 0.409215 | 0.837564 | 0.903843 | 0.816092 | 0.808155 | 0.795053 | 0.454109 | 0.670000 | 0.541500 | 0.365828 | 0.333184 | 0.337074 | 0.324045 | 0.297198 | 0.361620 |
+| weak rel1e-3 | 0.194345 | 0.408883 | 0.837335 | 0.905651 | 0.822960 | 0.812839 | 0.795222 | 0.452539 | 0.661889 | 0.543778 | 0.364838 | 0.332985 | 0.337118 | 0.324639 | 0.295588 | 0.360470 |
+| weak rel3e-3 | 0.193601 | 0.408568 | 0.830146 | 0.904244 | 0.819775 | 0.810498 | 0.797082 | 0.455001 | 0.676111 | 0.529167 | 0.365920 | 0.331771 | 0.337784 | 0.325711 | 0.296209 | 0.362972 |
+| weak rel1e-2 | 0.199772 | 0.409825 | 0.831943 | 0.904646 | 0.827770 | 0.813127 | 0.792768 | 0.450835 | 0.674111 | 0.514833 | 0.364533 | 0.330629 | 0.333868 | 0.322459 | 0.291925 | 0.361305 |
+
+Weak-subject brain retrieval deltas versus `rel0`:
+- `rel1e-3`: `+0.002278`
+- `rel3e-3`: `-0.012333`
+- `rel1e-2`: `-0.026667`
+
+Interpretation:
+- Subject 5 did not support relational consistency. All nonzero lambdas reduced refined brain retrieval by about `0.0096` to `0.0104` absolute versus same-subject `rel0`. `rel3e-3` and `rel1e-2` improved image retrieval, but the plan does not count image retrieval gains when brain retrieval does not improve and EffNet distance worsens.
+- Subject 7 had the only positive retrieval signal at `rel1e-3`: brain retrieval improved by `+0.014333`, with better CLIP, Inception, EffNet distance, and SwAV distance. This is below the plan's approximate `+0.02` success threshold and came with slightly lower image retrieval plus essentially flat to slightly lower visual/higher-visual correlations.
+- Subject 7 `rel3e-3` and `rel1e-2` are not candidates: `rel3e-3` reduced brain retrieval by `0.015111`; `rel1e-2` reduced it by `0.042889`.
+- Weak-subject mean brain retrieval is effectively neutral at `rel1e-3` (`+0.002278`) and worse at higher lambdas.
+
+Scientific decision:
+- Cycle 12 relational consistency is not a successful weak-subject improvement under the plan's criteria.
+- Do not claim a four-subject MindEyeV2 improvement.
+- Do not scale the relational lambda grid to subjects 1/2/5/7 as an improvement candidate.
+- If revisited, `rel1e-3` on subject 7 is the only weak hint worth repeating, but it is below threshold and not enough to displace the next mechanism.
+- The next mechanism should follow the plan's reliability-aware fallback: training-only reliability-aware voxel adaptation on subjects 5 and 7, with train-repeat reliability estimated only from training images, shrinkage toward ROI means, separate early and higher visual reporting, and a small no-reliability/low/mid grid.
+
+Recommended next research questions:
+- Does subject 7 `rel1e-3` repeat its sub-threshold brain-retrieval gain, or was it evaluation/training noise?
+- Before abandoning the mechanism entirely, confirm whether `clip_voxels.flatten(1)` is the same embedding used by `recon_inference.py`, retrieval evaluation, and prior conditioning.
+- For the next planned mechanism, what reliability estimate is stable when computed only from repeated training images after MindEye beta preprocessing?
