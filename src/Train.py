@@ -206,6 +206,10 @@ parser.add_argument(
     help="save backup ckpt and reconstruct every x epochs",
 )
 parser.add_argument(
+    "--resume_from_ckpt",action=argparse.BooleanOptionalAction,default=False,
+    help="Resume from ../train_logs/model_name/last.pth when it exists.",
+)
+parser.add_argument(
     "--seed",type=int,default=42,
 )
 parser.add_argument(
@@ -648,7 +652,7 @@ def load_ckpt(tag,load_lr=True,load_optimizer=True,load_epoch=True,strict=True,o
         state_dict.pop('ridge.linears.0.weight',None)
     model.load_state_dict(state_dict, strict=strict)
     if load_epoch:
-        globals()["epoch"] = checkpoint['epoch']
+        globals()["epoch"] = checkpoint['epoch'] + 1
         print("Epoch",epoch)
     if load_optimizer:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -726,7 +730,11 @@ torch.cuda.empty_cache()
 
 
 # load multisubject stage1 ckpt if set
-if multisubject_ckpt is not None:
+resumed_from_local_ckpt = False
+if resume_from_ckpt and os.path.exists(os.path.join(outdir, "last.pth")):
+    load_ckpt("last", outdir=outdir, load_lr=True, load_optimizer=True, load_epoch=True, strict=True)
+    resumed_from_local_ckpt = True
+if multisubject_ckpt is not None and not resumed_from_local_ckpt:
     load_ckpt("last",outdir=multisubject_ckpt,load_lr=False,load_optimizer=False,load_epoch=False,strict=False,multisubj_loading=True)
 
 adapter_prior_state = None
@@ -828,7 +836,7 @@ for epoch in progress_bar:
     # you now have voxel_iters and image_iters with num_iterations_per_epoch batches each
     for train_i in range(num_iterations_per_epoch):
         with torch.cuda.amp.autocast(dtype=data_type):
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss=0.
 
             voxel_list = [voxel_iters[f"subj0{s}_iter{train_i}"].detach().to(device) for s in subj_list]
