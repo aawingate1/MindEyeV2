@@ -231,6 +231,14 @@ parser.add_argument(
     "--adapter_prior_type", type=str, default="weights", choices=["weights", "outputs"],
     help="Whether to regularize ridge adapter weights or ridge adapter outputs toward initialization.",
 )
+parser.add_argument(
+    "--proj_reg_lambda", type=float, default=0.0,
+    help="Weight for L2 projection-drift regularization. Default 0 preserves baseline behavior.",
+)
+parser.add_argument(
+    "--proj_reg_modules", type=str, default="ridge",
+    help="Comma-separated module-name prefixes to regularize, e.g. ridge or ridge,backbone.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -660,6 +668,50 @@ def load_ckpt(tag,load_lr=True,load_optimizer=True,load_epoch=True,strict=True,o
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
     del checkpoint
 
+def parse_proj_reg_modules(module_spec):
+    return tuple(m.strip() for m in module_spec.split(",") if m.strip())
+
+def parameter_in_proj_reg_modules(param_name, module_prefixes):
+    return any(param_name == prefix or param_name.startswith(prefix + ".") for prefix in module_prefixes)
+
+def snapshot_proj_reg_params(model, module_spec):
+    module_prefixes = parse_proj_reg_modules(module_spec)
+    state = {
+        n: p.detach().cpu().clone()
+        for n, p in model.named_parameters()
+        if p.requires_grad and parameter_in_proj_reg_modules(n, module_prefixes)
+    }
+    return state, module_prefixes
+
+def move_proj_reg_state_to_device(state, device):
+    return {n: p.to(device) for n, p in state.items()}
+
+def compute_proj_reg_stats(model, source_state):
+    reg_loss = None
+    drift_sq = None
+    source_sq = None
+    matched = 0
+    for n, p in model.named_parameters():
+        if n not in source_state:
+            continue
+        source = source_state[n].to(p.device, dtype=p.dtype)
+        diff = p - source
+        term = torch.sum(diff.float() ** 2)
+        source_term = torch.sum(source.float() ** 2)
+        reg_loss = term if reg_loss is None else reg_loss + term
+        drift_sq = term.detach() if drift_sq is None else drift_sq + term.detach()
+        source_sq = source_term.detach() if source_sq is None else source_sq + source_term.detach()
+        matched += 1
+    if reg_loss is None:
+        ref_param = next(model.parameters())
+        reg_loss = ref_param.new_tensor(0.)
+        drift_sq = ref_param.new_tensor(0.)
+        source_sq = ref_param.new_tensor(0.)
+    drift_norm = torch.sqrt(drift_sq.float())
+    source_norm = torch.sqrt(source_sq.float())
+    relative_drift_norm = drift_norm / source_norm.clamp_min(1e-12)
+    return reg_loss, drift_norm, relative_drift_norm, matched
+
 print("\nDone with model preparations!")
 num_params = utils.count_params(model)
 
@@ -690,6 +742,8 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "reliability_topk": reliability_topk,
       "adapter_prior_weight": adapter_prior_weight,
       "adapter_prior_type": adapter_prior_type,
+      "proj_reg_lambda": proj_reg_lambda,
+      "proj_reg_modules": proj_reg_modules,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -747,6 +801,20 @@ if adapter_prior_weight > 0:
         adapter_prior_ridge.requires_grad_(False)
     print(f"Initialized adapter prior: type={adapter_prior_type}, weight={adapter_prior_weight}")
 
+proj_reg_state = None
+proj_reg_module_prefixes = ()
+proj_reg_num_params = 0
+if proj_reg_lambda > 0:
+    proj_reg_state, proj_reg_module_prefixes = snapshot_proj_reg_params(model, proj_reg_modules)
+    proj_reg_num_params = sum(p.numel() for p in proj_reg_state.values())
+    print(
+        f"Initialized projection drift regularization: "
+        f"lambda={proj_reg_lambda}, modules={proj_reg_module_prefixes}, "
+        f"tensors={len(proj_reg_state)}, params={proj_reg_num_params}"
+    )
+    if len(proj_reg_state) == 0:
+        raise ValueError(f"--proj_reg_lambda > 0 but --proj_reg_modules={proj_reg_modules!r} matched no trainable parameters")
+
 
 # In[19]:
 
@@ -760,6 +828,8 @@ if adapter_prior_state is not None:
     adapter_prior_state = {n: p.to(device) for n, p in adapter_prior_state.items()}
 if adapter_prior_ridge is not None:
     adapter_prior_ridge = adapter_prior_ridge.to(device)
+if proj_reg_state is not None:
+    proj_reg_state = move_proj_reg_state_to_device(proj_reg_state, device)
 
 
 # In[20]:
@@ -793,6 +863,11 @@ for epoch in progress_bar:
     loss_prior_total = 0.
     test_loss_prior_total = 0.
     loss_adapter_prior_total = 0.
+    proj_reg_loss_total = 0.
+    proj_reg_loss_scaled_total = 0.
+    proj_reg_drift_norm_total = 0.
+    proj_reg_relative_drift_norm_total = 0.
+    proj_reg_logged_steps = 0
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -880,6 +955,19 @@ for epoch in progress_bar:
                     raise ValueError(f"Unknown adapter_prior_type: {adapter_prior_type}")
                 loss_adapter_prior_total += loss_adapter_prior.item()
                 loss += loss_adapter_prior * adapter_prior_weight
+
+            if proj_reg_lambda > 0:
+                proj_reg_loss, proj_reg_drift_norm, proj_reg_relative_drift_norm, proj_reg_matched = compute_proj_reg_stats(
+                    accelerator.unwrap_model(model),
+                    proj_reg_state,
+                )
+                proj_reg_loss_scaled = proj_reg_loss * proj_reg_lambda
+                loss += proj_reg_loss_scaled
+                proj_reg_loss_total += proj_reg_loss.detach().float().item()
+                proj_reg_loss_scaled_total += proj_reg_loss_scaled.detach().float().item()
+                proj_reg_drift_norm_total += proj_reg_drift_norm.item()
+                proj_reg_relative_drift_norm_total += proj_reg_relative_drift_norm.item()
+                proj_reg_logged_steps += 1
 
             backbone, clip_voxels, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
 
@@ -1080,6 +1168,12 @@ for epoch in progress_bar:
                 "train/loss_prior": loss_prior_total / (train_i + 1),
                 "test/loss_prior": test_loss_prior_total / (test_i + 1),
                 "train/loss_adapter_prior": loss_adapter_prior_total / (train_i + 1),
+                "train/proj_reg_loss": proj_reg_loss_total / max(1, proj_reg_logged_steps),
+                "train/proj_reg_loss_scaled": proj_reg_loss_scaled_total / max(1, proj_reg_logged_steps),
+                "train/proj_reg_drift_norm": proj_reg_drift_norm_total / max(1, proj_reg_logged_steps),
+                "train/proj_reg_relative_drift_norm": proj_reg_relative_drift_norm_total / max(1, proj_reg_logged_steps),
+                "train/proj_reg_matched_tensors": len(proj_reg_state) if proj_reg_state is not None else 0,
+                "train/proj_reg_num_params": proj_reg_num_params,
                 }
 
             # if finished training, save jpg recons if they exist

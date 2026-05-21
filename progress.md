@@ -402,3 +402,69 @@ Conclusions:
 Recommended next research questions:
 - First post-baseline ablation: projection-drift or ridge-prior regularization targeted at weak-subject generalization, with the same official-control evaluator path.
 - Before treating the stronger local brain/retrieval row as a model improvement, debug why the local fine-tunes are substantially stronger than the paper brain-retrieval baseline.
+
+## Cycle 7 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the first constrained post-baseline ablation: projection-drift regularization for sparse one-session target-subject adaptation.
+- Telegram report was not due.
+
+Code/config changes:
+- Patched `/src/Train.py` with disabled-by-default projection-drift regularization:
+  - added `--proj_reg_lambda`, default `0.0`;
+  - added `--proj_reg_modules`, default `ridge`;
+  - snapshots selected trainable full-model parameter names after checkpoint load and before `accelerator.prepare`;
+  - computes `sum(||theta_current - theta_source||_2^2)` over matched selected parameters and adds `proj_reg_lambda * proj_reg_loss` during training only when `proj_reg_lambda > 0`;
+  - logs unscaled regularization loss, scaled regularization loss, absolute drift norm, relative drift norm, matched tensor count, and selected parameter count in the existing epoch log dictionary.
+- Confirmed the selected default module is `ridge`; on subject 5 it matched two tensors and `53,411,840` trainable parameters.
+- Preserved the existing paper config flags in Slurm wrappers: `--num_sessions=1`, `--batch_size=24`, `--hidden_dim=4096`, `--use_prior`, `--blurry_recon`, official multisubject initialization, and the validated evaluator path.
+- Added `/src/cycle7_projreg_smoke.slurm` for the required one-hour subject 5 smoke.
+- Added `/src/cycle7_projreg_train_s57.slurm` for the constrained weak-subject training sweep over subjects 5/7 and lambdas `0`, `1e-5`, `3e-5`, `1e-4`.
+- Added `/src/cycle7_projreg_eval_s57.slurm` for the dependent refined evaluation path: `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/Train.py` passed.
+- `bash -n /src/cycle7_projreg_smoke.slurm /src/cycle7_projreg_train_s57.slurm /src/cycle7_projreg_eval_s57.slurm` passed.
+- `lambda=0` should preserve the default training path because source-parameter snapshotting, drift-stat computation, and loss addition are all guarded by `if proj_reg_lambda > 0`; a queued `lambda=0` local-control arm will verify the current code path against the ablation arms.
+
+Commands/jobs launched:
+- Submitted smoke: `sbatch /src/cycle7_projreg_smoke.slurm`, job `8539534`, subject 5, lambda `1e-4`, one A100, `64G`, `01:00:00`.
+- Smoke job `8539534` completed: `COMPLETED`, exit `0:0`, elapsed `00:06:06`, node `della-l09g5`.
+- Submitted weak-subject training sweep after the smoke passed: `sbatch /src/cycle7_projreg_train_s57.slurm`, job `8539988_[0-7]`, subjects 5/7, lambdas `0`, `1e-5`, `3e-5`, `1e-4`, one A100 each, `64G`, `03:00:00`.
+- Submitted dependent weak-subject evaluation array: `sbatch --dependency=afterok:8539988 /src/cycle7_projreg_eval_s57.slurm`, job `8540137_[0-7]`, one A100 each, `64G`, `04:00:00`.
+- At write time, `8539988_[0-7]` was `PENDING (Priority)` and `8540137_[0-7]` was `PENDING (Dependency afterok:8539988_*)`.
+
+Smoke observed metrics:
+- Checkpoint load and training started from `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj05/last.pth`.
+- Regularizer initialization log: `lambda=0.0001`, modules `('ridge',)`, tensors `2`, params `53,411,840`.
+- Final epoch smoke diagnostics:
+  - train loss `11.4`; test loss `13.1`;
+  - train blurry PixCorr `0.341`; test blurry PixCorr `0.250`;
+  - train fwd/bwd top-1 `0.992/0.972`; test fwd/bwd top-1 `0.407/0.283`;
+  - unscaled projection loss `37.7`; scaled projection loss `0.00377`;
+  - absolute drift norm `6.13`; relative drift norm `0.165`;
+  - matched tensors `2`; selected params `5.34e+7`.
+- Smoke failure class: none. No checkpoint-load, loss-addition, logging, output-path, or CUDA-memory failure was observed.
+
+Baseline and comparison status:
+- Official-control paper-matched row from Cycle 6 remains the primary reference:
+  - weak subject 5 image/brain retrieval `0.669222/0.469667`, visual cortex/higher visual `0.403527/0.414595`;
+  - weak subject 7 image/brain retrieval `0.644444/0.378111`, visual cortex/higher visual `0.293540/0.285348`.
+- The Cycle 7 sweep has not produced refined metrics yet. No claim is available until the dependent evaluation array writes per-subject CSVs.
+- The stronger local Cycle 2 fine-tuned row remains classified as non-paper-matched local training/resume/config drift and is not the primary baseline for this ablation.
+
+Artifact/checkpoint provenance:
+- Official multisubject initialization for Cycle 7 training is Hugging Face `pscotti/mindeyev2`, staged under `/src/train_logs/final_multisubject_subj0{5,7}/last.pth` for the weak-subject first pass.
+- Smoke model name: `cycle7_smoke_subj05_projreg1e-4_3ep`.
+- Sweep model names: `cycle7_subj0{5,7}_projreg{0,1em5,3em5,1em4}_1sess_150ep`.
+- Pending refined outputs and CSVs will be produced under `/src/evals/<model_name>/` and `/src/tables/<model_name>_all_enhancedrecons.csv` after job `8540137_[0-7]` runs.
+
+Conclusions:
+- The projection-drift plumbing is implemented and active only when requested.
+- The required one-hour preflight passed on subject 5 with nonzero drift/loss diagnostics, so the weak-subject sweep was launched.
+- The first sweep intentionally covers subjects 5 and 7 only because they are the weak-subject diagnostics and queue pressure is nontrivial. Any final four-subject claim still requires subjects 1/2/5/7.
+
+Recommended next research questions:
+- Do the queued weak-subject lambda arms complete within `03:00:00`, and does the `lambda=0` arm reproduce the current local training behavior closely enough to serve as the local-control row?
+- Which lambda, if any, improves subjects 5/7 brain retrieval while preserving CLIP, Inception, and image retrieval against the official-control row?
+- If all lambdas underfit or semantic/retrieval metrics degrade, reduce the lambda grid or restrict regularization to fewer ridge parameters before scaling to subjects 1/2.
