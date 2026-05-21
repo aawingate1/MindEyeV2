@@ -956,6 +956,8 @@ for epoch in progress_bar:
                     blurry_recon_images = (autoenc.decode(image_enc_pred[random_samps]/0.18215).sample/ 2 + 0.5).clamp(0,1)
                     pixcorr = utils.pixcorr(image[random_samps], blurry_recon_images)
                     blurry_pixcorr += pixcorr.item()
+                del blurry_recon_images, pixcorr
+                torch.cuda.empty_cache()
 
             utils.check_loss(loss)
             accelerator.backward(loss)
