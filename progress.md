@@ -468,3 +468,80 @@ Recommended next research questions:
 - Do the queued weak-subject lambda arms complete within `03:00:00`, and does the `lambda=0` arm reproduce the current local training behavior closely enough to serve as the local-control row?
 - Which lambda, if any, improves subjects 5/7 brain retrieval while preserving CLIP, Inception, and image retrieval against the official-control row?
 - If all lambdas underfit or semantic/retrieval metrics degrade, reduce the lambda grid or restrict regularization to fewer ridge parameters before scaling to subjects 1/2.
+
+## Cycle 8 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the active projection-drift sweep readout path.
+- Telegram report was not due.
+- No generator/refiner, ROI-routing, temporal-decoding, caption/VLM, low-rank-adapter, or relational-consistency experiment was started.
+
+Code/config changes:
+- No changes were made to `Train.py`, `models.py`, or Slurm training/evaluation scripts in Cycle 8.
+- Added the train-only diagnostic artifact `/workspace/myresearch/cycle8_train_repeat_reliability.json`.
+
+Cycle 7 active job status:
+- Training array `8539988_[0-7]` is still pending under Slurm priority; no task has started and no training stdout/stderr exists yet for the array.
+- Evaluation array `8540137_[0-7]` is still pending on the `afterok:8539988` dependency; no evaluation task has started and no evaluation stdout/stderr exists yet.
+- `squeue` status at Cycle 8 inspection:
+  - `8539988_0`: subject 5, lambda `0`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_0.out`, stderr `/src/slurms/c7_projreg_s57_8539988_0.err` not yet created.
+  - `8539988_1`: subject 5, lambda `1e-5`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_1.out`, stderr `/src/slurms/c7_projreg_s57_8539988_1.err` not yet created.
+  - `8539988_2`: subject 5, lambda `3e-5`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_2.out`, stderr `/src/slurms/c7_projreg_s57_8539988_2.err` not yet created.
+  - `8539988_3`: subject 5, lambda `1e-4`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_3.out`, stderr `/src/slurms/c7_projreg_s57_8539988_3.err` not yet created.
+  - `8539988_4`: subject 7, lambda `0`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_4.out`, stderr `/src/slurms/c7_projreg_s57_8539988_4.err` not yet created.
+  - `8539988_5`: subject 7, lambda `1e-5`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_5.out`, stderr `/src/slurms/c7_projreg_s57_8539988_5.err` not yet created.
+  - `8539988_6`: subject 7, lambda `3e-5`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_6.out`, stderr `/src/slurms/c7_projreg_s57_8539988_6.err` not yet created.
+  - `8539988_7`: subject 7, lambda `1e-4`, `PENDING (Priority)`, exit `0:0`, node none, elapsed `00:00:00`, stdout `/src/slurms/c7_projreg_s57_8539988_7.out`, stderr `/src/slurms/c7_projreg_s57_8539988_7.err` not yet created.
+  - `8540137_[0-7]`: dependent evaluation array, `PENDING (Dependency)`, exit `0:0`, node none, elapsed `00:00:00`; expected stdout/stderr `/src/slurms/c7_projreg_eval_s57_8540137_<task>.out/.err` not yet created.
+- Failure class for all above tasks: none yet; operational state is queue-pending, not failed.
+
+Completed projection-drift smoke diagnostics:
+- Smoke job `8539534`, subject 5, lambda `1e-4`, completed before Cycle 8 and remains the only available projection-drift training trace.
+- Drift curve by epoch:
+  - epoch 1: train loss `15.2`, test loss `14.9`, train/test blurry PixCorr `0.183/0.231`, train/test fwd retrieval `0.387/0.157`, train/test bwd retrieval `0.159/0.040`, unscaled projection loss `1.03`, scaled projection loss `0.000103`, drift norm `0.762`, relative drift `0.0206`, matched tensors `2`, selected params `5.34e7`.
+  - epoch 2: train loss `11.5`, test loss `11.4`, train/test blurry PixCorr `0.254/0.227`, train/test fwd retrieval `0.898/0.380`, train/test bwd retrieval `0.755/0.200`, unscaled projection loss `18.5`, scaled projection loss `0.00185`, drift norm `4.18`, relative drift `0.113`, matched tensors `2`, selected params `5.34e7`.
+  - epoch 3: train loss `11.4`, test loss `13.1`, train/test blurry PixCorr `0.341/0.250`, train/test fwd retrieval `0.992/0.407`, train/test bwd retrieval `0.972/0.283`, unscaled projection loss `37.7`, scaled projection loss `0.00377`, drift norm `6.13`, relative drift `0.165`, matched tensors `2`, selected params `5.34e7`.
+- There is not yet a `lambda=0` full-run drift/loss curve for same-code local control; it is task `8539988_0` and remains pending.
+
+Available weak-subject control metric rows:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | image retrieval | brain retrieval | visual cortex | V1 | V2 | V3 | V4 | higher visual |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| official-control subj05 | 0.175138 | 0.405438 | 0.831098 | 0.910006 | 0.843287 | 0.825327 | 0.781252 | 0.444283 | 0.669222 | 0.469667 | 0.403527 | 0.328285 | 0.335762 | 0.323165 | 0.303573 | 0.414595 |
+| official-control subj07 | 0.169830 | 0.408449 | 0.807004 | 0.858992 | 0.749044 | 0.742868 | 0.854014 | 0.503689 | 0.644444 | 0.378111 | 0.293540 | 0.283393 | 0.285332 | 0.271559 | 0.243048 | 0.285348 |
+| local Cycle 2 subj05 | 0.198452 | 0.412553 | 0.848701 | 0.918145 | 0.856925 | 0.846210 | 0.759550 | 0.430057 | 0.648778 | 0.535778 | 0.414329 | 0.345305 | 0.350450 | 0.334916 | 0.312673 | 0.423239 |
+| local Cycle 2 subj07 | 0.200331 | 0.405877 | 0.826426 | 0.889542 | 0.775259 | 0.770100 | 0.830555 | 0.478162 | 0.691222 | 0.547222 | 0.317326 | 0.321064 | 0.323698 | 0.313173 | 0.281722 | 0.300001 |
+| official weak mean 5/7 | 0.172484 | 0.406944 | 0.819051 | 0.884499 | 0.796166 | 0.784098 | 0.817633 | 0.473986 | 0.656833 | 0.423889 | 0.348533 | 0.305839 | 0.310547 | 0.297362 | 0.273311 | 0.349971 |
+| local Cycle 2 weak mean 5/7 | 0.199392 | 0.409215 | 0.837564 | 0.903843 | 0.816092 | 0.808155 | 0.795053 | 0.454109 | 0.670000 | 0.541500 | 0.365828 | 0.333184 | 0.337074 | 0.324045 | 0.297198 | 0.361620 |
+
+Projection-drift sweep metric status:
+- `lambda=0`, `1e-5`, `3e-5`, and `1e-4` CSVs do not exist yet for subjects 5 or 7 because training/evaluation arrays have not started.
+- No Cycle 8 decision table can honestly rank lambdas yet. The official-control and Cycle 2 local rows above are only provenance controls; the required same-code local-control `lambda=0` row is still pending.
+- EfficientNet and SwAV are distance metrics, so lower is better when the sweep rows become available.
+
+Train-only reliability diagnostic:
+- Method: for each subject, use only training betas and `COCO_73k_subj_indices.hdf5`; compute per-voxel Pearson correlation across repeated training image IDs between the first and second occurrence of each repeated ID, then summarize by voxel masks. No `shared1000`, `new_test`, or final-evaluator test repeats were used.
+- One-session subset (`n=750`) has `136` repeated image IDs and `303` repeated-image trials for each subject.
+- Full training set (`n=30000`) has `10000` repeated image IDs and `30000` repeated-image trials for each subject.
+- Voxel counts match the required masks: subj01 total `15724`, early `4657`, higher `11067`; subj02 total `14278`, early `3757`, higher `10521`; subj05 total `13039`, early `3661`, higher `9378`; subj07 total `12682`, early `3251`, higher `9431`.
+
+| subject/window | all mean r | early mean r | higher mean r | all median r | early median r | higher median r |
+|---|---|---|---|---|---|---|
+| subj01 one-session 750 | 0.162033 | 0.232150 | 0.132528 | 0.142471 | 0.230462 | 0.117591 |
+| subj01 all-train 30000 | 0.164854 | 0.212194 | 0.144933 | 0.141908 | 0.200937 | 0.121222 |
+| subj02 one-session 750 | 0.180506 | 0.281447 | 0.144460 | 0.145721 | 0.268344 | 0.122151 |
+| subj02 all-train 30000 | 0.183543 | 0.228757 | 0.167398 | 0.157422 | 0.205648 | 0.146640 |
+| subj05 one-session 750 | 0.221498 | 0.277334 | 0.199700 | 0.211197 | 0.277415 | 0.189570 |
+| subj05 all-train 30000 | 0.202433 | 0.205930 | 0.201068 | 0.186557 | 0.192253 | 0.183862 |
+| subj07 one-session 750 | 0.166190 | 0.255124 | 0.135533 | 0.145981 | 0.258435 | 0.123987 |
+| subj07 all-train 30000 | 0.125508 | 0.151110 | 0.116682 | 0.112246 | 0.139390 | 0.104818 |
+
+Interpretation:
+- Subject 5 has comparatively high train-repeat reliability, including higher visual cortex, despite weak official-control image/brain retrieval. This supports the plan's interpretation of subject 5 as more likely a retrieval-geometry or adaptation bottleneck than a pure signal-quality bottleneck.
+- Subject 7 has the weakest full-train reliability among the four subjects in both early and higher visual masks, matching the plan's signal/alignment-limited concern.
+- These reliability values are interpretation-only for Cycle 8 and were not used to tune voxel weights or launch a new mechanism.
+
+Decision:
+- Do not scale to subjects 1/2 yet. The success criterion depends on completed `lambda=0`, `1e-5`, `3e-5`, and `1e-4` refined metrics for subjects 5/7, and those runs are still pending.
+- Do not launch a second mechanism. The correct next action is to let `8539988_[0-7]` start/finish, then parse logs and run or repair dependent evaluation `8540137_[0-7]` if needed.
+- If training completes but evaluation remains blocked, rerun only the missing `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` steps using the Cycle 6 validated scratch-path/offline-cache setup.
