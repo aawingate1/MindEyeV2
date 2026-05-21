@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --account=knorman
-#SBATCH --job-name=c4_eval_s57
+#SBATCH --job-name=c6_local_final_s57
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --mem=64G
 #SBATCH --array=0-1
 #SBATCH -e /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.err
@@ -32,23 +32,9 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export XDG_CACHE_HOME="${SRC_DIR}/cache/xdg"
 
-echo "Cycle 4 full local baseline evaluation for completed subjects"
+echo "Cycle 6 local final_evaluations only for subjects 5/7"
 echo "MODEL_NAME=${MODEL_NAME}"
 echo "SUBJ=${SUBJ}"
-rm -f "evals/${MODEL_NAME}/${MODEL_NAME}"_all_*.pt
-
-python recon_inference.py \
-  --data_path="${SRC_DIR}" \
-  --cache_dir="${SRC_DIR}" \
-  --model_name="${MODEL_NAME}" \
-  --subj="${SUBJ}" \
-  --hidden_dim=4096 \
-  --n_blocks=4 \
-  --new_test
-
-python enhanced_recon_inference.py \
-  --model_name="${MODEL_NAME}" \
-  --subj="${SUBJ}"
 
 python final_evaluations.py \
   --data_path="${SRC_DIR}" \

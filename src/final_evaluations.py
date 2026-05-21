@@ -18,9 +18,6 @@ import torch.nn as nn
 from torchvision import transforms
 from accelerate import Accelerator, DeepSpeedPlugin
 
-from sentence_transformers import SentenceTransformer, util
-from transformers import CLIPModel, AutoTokenizer, AutoProcessor
-import evaluate
 import pandas as pd
 
 from generative_models.sgm.modules.encoders.modules import FrozenOpenCLIPImageEmbedder
@@ -90,6 +87,10 @@ else:
 # create global variables without the args prefix
 for attribute_name in vars(args).keys():
     globals()[attribute_name] = getattr(args, attribute_name)
+
+torch_home = os.path.join(cache_dir, "cache", "torch")
+os.environ.setdefault("TORCH_HOME", torch_home)
+torch.hub.set_dir(os.path.join(torch_home, "hub"))
     
 # seed all random functions
 utils.seed_everything(seed)
@@ -373,7 +374,7 @@ print(f"2-way Percent Correct: {inception:.4f}")
 
 # %%
 import clip
-clip_model, preprocess = clip.load("ViT-L/14", device=device)
+clip_model, preprocess = clip.load("ViT-L/14", device=device, download_root=os.path.join(cache_dir, "cache", "clip"))
 
 preprocess = transforms.Compose([
     transforms.Resize(224, interpolation=transforms.InterpolationMode.BILINEAR),
@@ -544,6 +545,10 @@ if not utils.is_interactive():
     sys.exit(0)
 
 # %%
+from sentence_transformers import SentenceTransformer, util
+from transformers import CLIPModel, AutoTokenizer, AutoProcessor
+import evaluate
+
 all_git_generated_captions = torch.load(f"evals/all_git_generated_captions.pt")
 
 # %%

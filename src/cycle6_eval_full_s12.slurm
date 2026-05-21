@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=knorman
-#SBATCH --job-name=c4_eval_s57
+#SBATCH --job-name=c6_eval_s12
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a100:1
 #SBATCH --time=04:00:00
@@ -11,7 +11,7 @@
 #SBATCH --no-requeue
 
 SRC_DIR=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src
-SUBJECTS=(5 7)
+SUBJECTS=(1 2)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
 MODEL_NAME="cycle2_subj0${SUBJ}_official_1sess_150ep"
 
@@ -32,7 +32,7 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export XDG_CACHE_HOME="${SRC_DIR}/cache/xdg"
 
-echo "Cycle 4 full local baseline evaluation for completed subjects"
+echo "Cycle 6 full local baseline evaluation for resumed subjects"
 echo "MODEL_NAME=${MODEL_NAME}"
 echo "SUBJ=${SUBJ}"
 rm -f "evals/${MODEL_NAME}/${MODEL_NAME}"_all_*.pt

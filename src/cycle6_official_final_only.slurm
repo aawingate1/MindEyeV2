@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --account=knorman
-#SBATCH --job-name=c4_eval_s57
+#SBATCH --job-name=c6_official_final
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --mem=64G
-#SBATCH --array=0-1
+#SBATCH --array=0-3
 #SBATCH -e /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.err
 #SBATCH -o /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.out
 #SBATCH --no-requeue
 
 SRC_DIR=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src
-SUBJECTS=(5 7)
+SUBJECTS=(1 2 5 7)
 SUBJ=${SUBJECTS[$SLURM_ARRAY_TASK_ID]}
-MODEL_NAME="cycle2_subj0${SUBJ}_official_1sess_150ep"
+MODEL_NAME=$(printf "final_subj%02d_pretrained_1sess_24bs" "${SUBJ}")
 
 cd "${SRC_DIR}"
 source /etc/profile.d/modules.sh
@@ -32,23 +32,9 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export XDG_CACHE_HOME="${SRC_DIR}/cache/xdg"
 
-echo "Cycle 4 full local baseline evaluation for completed subjects"
+echo "Cycle 6 official-control final_evaluations only"
 echo "MODEL_NAME=${MODEL_NAME}"
 echo "SUBJ=${SUBJ}"
-rm -f "evals/${MODEL_NAME}/${MODEL_NAME}"_all_*.pt
-
-python recon_inference.py \
-  --data_path="${SRC_DIR}" \
-  --cache_dir="${SRC_DIR}" \
-  --model_name="${MODEL_NAME}" \
-  --subj="${SUBJ}" \
-  --hidden_dim=4096 \
-  --n_blocks=4 \
-  --new_test
-
-python enhanced_recon_inference.py \
-  --model_name="${MODEL_NAME}" \
-  --subj="${SUBJ}"
 
 python final_evaluations.py \
   --data_path="${SRC_DIR}" \

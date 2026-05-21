@@ -282,3 +282,123 @@ Cycle 5 correction after immediate Slurm feedback:
   - official-control smoke: `8529880`, `PENDING`, `01:00:00`, `64G`
   - official-control full eval: `8529881_[0-3]`, `PENDING (Dependency afterok:8529880)`, `04:00:00`, `64G`
 - Updated next job IDs to watch: `8529878`, `8529879`, `8529880`, and `8529881`. Older Cycle 5 IDs `8529618`, `8529619`, `8529828`, and `8529829` are operationally superseded.
+
+## Cycle 6 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 6 baseline-control gate: reproduce a trustworthy MindEye2 one-hour control table for NSD subjects 1/2/5/7 before any ablation.
+- Telegram report was not due.
+- No ablation jobs were launched.
+
+Code/config changes:
+- Patched `/src/final_evaluations.py` so non-interactive metric runs can execute on Slurm compute nodes:
+  - moved `sentence_transformers`, `transformers`, and `evaluate` imports below the non-interactive `sys.exit(0)` block, avoiding the stale `huggingface_hub.errors` import failure in this workflow;
+  - set `TORCH_HOME`/`torch.hub` under `/src/cache/torch`;
+  - pointed CLIP image-metric loading at `/src/cache/clip`.
+- Added `/src/cycle6_official_final_only.slurm` to run final metrics only for the already-generated official-control intermediates.
+- Added `/src/cycle6_local_final_s57.slurm` to finish final metrics for local subjects 5/7 after their enhancement tensors had already been written.
+- Added `/src/cycle6_eval_full_s12.slurm` to run local subjects 1/2 through recon, enhancement, and final metrics after their resumed training completed.
+- Staged evaluator weights offline for compute nodes:
+  - `/src/cache/torch/hub/checkpoints/alexnet-owt-7be5be79.pth`
+  - `/src/cache/torch/hub/checkpoints/inception_v3_google-0cc3c7bd.pth`
+  - `/src/cache/torch/hub/checkpoints/efficientnet_b1-c27df63c.pth`
+  - `/src/cache/torch/hub/checkpoints/swav_800ep_pretrain.pth.tar`
+  - `/src/cache/clip/ViT-L-14.pt`
+  - `/src/cache/torch/hub/facebookresearch_swav_main`
+
+Commands/jobs launched and inspected:
+- Official smoke `8529880`: completed successfully and proved subject 1 official `recon_inference.py` could write local evaluator intermediates.
+- Official full eval `8529881_[0-3]`: generated official intermediates for subjects 1/2/5/7, then failed in `final_evaluations.py` on `ModuleNotFoundError: No module named 'huggingface_hub.errors'`.
+- Official final-only retry `8534854_[0-3]`: failed quickly because compute nodes tried to download AlexNet weights and DNS failed.
+- Official final-only retry `8535411_[0-3]`: completed all four subjects in about 8-9 minutes each and wrote the official-control CSVs.
+- Local subject 1/2 resume `8529878_[0-1]`: completed both tasks after resuming from epoch 76, resolving the late CUDA OOM path.
+  - subject 1 final resume diagnostics: train loss `5.19`, train blurry PixCorr `0.793`, test loss `15.9`, test blurry PixCorr `0.243`.
+  - subject 2 final resume diagnostics: train loss `5.21`, train blurry PixCorr `0.797`, test loss `15.9`, test blurry PixCorr `0.254`.
+- Local subject 5/7 full eval `8529879_[0-1]`: recon and enhancement succeeded, then final metrics failed on the same old `evaluate` import issue.
+- Local subject 5/7 final-only retry `8535856_[0-1]`: completed both subjects and wrote CSVs.
+- Local subject 1/2 full eval `8533288_[0-1]`: completed both subjects and wrote CSVs.
+- Queue check after bookkeeping showed no remaining Cycle 6 batch jobs, only the interactive allocation.
+
+Required voxel/ROI diagnostics:
+- subj01: `15724` total; early `4657`; higher `11067`
+- subj02: `14278` total; early `3757`; higher `10521`
+- subj05: `13039` total; early `3661`; higher `9378`
+- subj07: `12682` total; early `3251`; higher `9431`
+
+Official-control outputs:
+- CSVs:
+  - `/src/tables/final_subj01_pretrained_1sess_24bs_all_enhancedrecons.csv`
+  - `/src/tables/final_subj02_pretrained_1sess_24bs_all_enhancedrecons.csv`
+  - `/src/tables/final_subj05_pretrained_1sess_24bs_all_enhancedrecons.csv`
+  - `/src/tables/final_subj07_pretrained_1sess_24bs_all_enhancedrecons.csv`
+- Metric order: PixCorr, SSIM, AlexNet-2, AlexNet-5, Inception, CLIP, EffNet dist, SwAV dist, image retrieval, brain retrieval, visual cortex, V1, V2, V3, V4, higher visual.
+- subj01: `0.234518`, `0.428201`, `0.880245`, `0.933269`, `0.835659`, `0.807559`, `0.798230`, `0.458674`, `0.939556`, `0.776444`, `0.346744`, `0.318201`, `0.337088`, `0.340852`, `0.316322`, `0.344988`
+- subj02: `0.200407`, `0.433062`, `0.850004`, `0.921283`, `0.818588`, `0.793912`, `0.807368`, `0.466684`, `0.905667`, `0.672000`, `0.350124`, `0.306053`, `0.296230`, `0.322867`, `0.336179`, `0.357373`
+- subj05: `0.175138`, `0.405438`, `0.831098`, `0.910006`, `0.843287`, `0.825327`, `0.781252`, `0.444283`, `0.669222`, `0.469667`, `0.403527`, `0.328285`, `0.335762`, `0.323165`, `0.303573`, `0.414595`
+- subj07: `0.169830`, `0.408449`, `0.807004`, `0.858992`, `0.749044`, `0.742868`, `0.854014`, `0.503689`, `0.644444`, `0.378111`, `0.293540`, `0.283393`, `0.285332`, `0.271559`, `0.243048`, `0.285348`
+
+Official-control four-subject mean vs paper:
+- PixCorr: paper `.195`, observed `.194973`, delta `-0.000027` (`-0.01%`)
+- SSIM: paper `.419`, observed `.418787`, delta `-0.000213` (`-0.05%`)
+- AlexNet-2: paper `.842`, observed `.842088`, delta `+0.000088` (`+0.01%`)
+- AlexNet-5: paper `.906`, observed `.905888`, delta `-0.000112` (`-0.01%`)
+- Inception: paper `.812`, observed `.811644`, delta `-0.000356` (`-0.04%`)
+- CLIP: paper `.792`, observed `.792416`, delta `+0.000416` (`+0.05%`)
+- EfficientNet distance: paper `.810`, observed `.810216`, delta `+0.000216` (`+0.03%`)
+- SwAV distance: paper `.468`, observed `.468332`, delta `+0.000332` (`+0.07%`)
+- Image retrieval: paper `.790`, observed `.789722`, delta `-0.000278` (`-0.04%`)
+- Brain retrieval: paper `.574`, observed `.574056`, delta `+0.000056` (`+0.01%`)
+- Visual cortex: paper `.348`, observed `.348483`, delta `+0.000483` (`+0.14%`)
+- V1: paper `.309`, observed `.308983`, delta `-0.000017` (`-0.01%`)
+- V2: paper `.314`, observed `.313603`, delta `-0.000397` (`-0.13%`)
+- V3: paper `.315`, observed `.314611`, delta `-0.000389` (`-0.12%`)
+- V4: paper `.300`, observed `.299781`, delta `-0.000219` (`-0.07%`)
+- Higher visual: paper `.351`, observed `.350576`, delta `-0.000424` (`-0.12%`)
+
+Official-control conclusion:
+- PASS. The official one-session control reproduces the paper row to within rounding noise across reconstruction metrics, retrieval metrics, and brain-correlation ROIs.
+- This validates the local evaluator, official enhanced tensors, `shared1000` handling, candidate pool, brain-correlation path, and refined-output selection.
+- Weak-subject behavior is visible in the official row: subject 5 image/brain retrieval `0.669/0.470` and subject 7 `0.644/0.378`, much lower than subjects 1/2.
+
+Local fine-tuned outputs:
+- CSVs:
+  - `/src/tables/cycle2_subj01_official_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle2_subj02_official_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle2_subj05_official_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle2_subj07_official_1sess_150ep_all_enhancedrecons.csv`
+- subj01: `0.239807`, `0.418140`, `0.887531`, `0.935575`, `0.825261`, `0.812677`, `0.796079`, `0.447024`, `0.916000`, `0.846222`, `0.352725`, `0.322273`, `0.341952`, `0.344400`, `0.323520`, `0.352405`
+- subj02: `0.209819`, `0.414476`, `0.856166`, `0.928121`, `0.818332`, `0.804996`, `0.810257`, `0.460600`, `0.895333`, `0.793556`, `0.364327`, `0.328214`, `0.312045`, `0.333570`, `0.355932`, `0.366316`
+- subj05: `0.198452`, `0.412553`, `0.848701`, `0.918145`, `0.856925`, `0.846210`, `0.759550`, `0.430057`, `0.648778`, `0.535778`, `0.414329`, `0.345305`, `0.350450`, `0.334916`, `0.312673`, `0.423239`
+- subj07: `0.200331`, `0.405877`, `0.826426`, `0.889542`, `0.775259`, `0.770100`, `0.830555`, `0.478162`, `0.691222`, `0.547222`, `0.317326`, `0.321064`, `0.323698`, `0.313173`, `0.281722`, `0.300001`
+
+Local fine-tuned four-subject mean vs paper:
+- PixCorr `.212102` (`+8.77%`)
+- SSIM `.412762` (`-1.49%`)
+- AlexNet-2 `.854706` (`+1.51%`)
+- AlexNet-5 `.917846` (`+1.31%`)
+- Inception `.818944` (`+0.86%`)
+- CLIP `.808496` (`+2.08%`)
+- EfficientNet distance `.799110` (`-1.34%`, lower is better)
+- SwAV distance `.453961` (`-3.00%`, lower is better)
+- Image retrieval `.787833` (`-0.27%`)
+- Brain retrieval `.680694` (`+18.59%`)
+- Visual cortex `.362177` (`+4.07%`)
+- V1 `.329214` (`+6.54%`)
+- V2 `.332036` (`+5.74%`)
+- V3 `.331515` (`+5.24%`)
+- V4 `.318462` (`+6.15%`)
+- Higher visual `.360490` (`+2.70%`)
+
+Mismatch classification:
+- Official-control row: evaluator/control PASS.
+- Initial Cycle 6 failures: operational/evaluator environment drift, fixed by lazy imports and offline metric weights.
+- Local fine-tuned row: complete but non-paper-matched. Since the official-control row matches the paper, local differences should be treated as local training/resume/config drift rather than evaluator drift.
+
+Conclusions:
+- The baseline gate is now satisfied for the official one-session control row.
+- Any future claimed improvement must be compared against the official-control row for paper reproduction and against the local fine-tuned row only with clear provenance separation.
+- Subjects 5 and 7 remain the weakest held-out subjects on retrieval in the official baseline, making them the most useful diagnostics for early post-baseline ablations.
+
+Recommended next research questions:
+- First post-baseline ablation: projection-drift or ridge-prior regularization targeted at weak-subject generalization, with the same official-control evaluator path.
+- Before treating the stronger local brain/retrieval row as a model improvement, debug why the local fine-tunes are substantially stronger than the paper brain-retrieval baseline.

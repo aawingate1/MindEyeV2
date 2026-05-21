@@ -27,8 +27,10 @@ export HF_HOME="${SRC_DIR}/cache"
 export HF_HUB_CACHE="${SRC_DIR}/cache/hf_hub"
 export TRANSFORMERS_CACHE="${SRC_DIR}/cache/hf_hub"
 export HUGGINGFACE_HUB_CACHE="${SRC_DIR}/cache/hf_hub"
+export TORCH_HOME="${SRC_DIR}/cache/torch"
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export XDG_CACHE_HOME="${SRC_DIR}/cache/xdg"
 
 echo "Cycle 5 official one-session control full evaluation"
 echo "MODEL_NAME=${MODEL_NAME}"
