@@ -859,3 +859,66 @@ Recommended next research questions:
 - If relational consistency improves subject 5 brain retrieval without semantic or ROI damage, does subject 7 require reliability-aware voxel adaptation rather than stronger relational weighting?
 - If all relational rows match no-rel control, audit whether `clip_voxels.flatten(1)` is the only retrieval-relevant embedding used downstream in `recon_inference.py`.
 - If `1e-2` damages semantic metrics while `1e-3` or `3e-3` is neutral, narrow the grid rather than increasing the penalty.
+
+## Cycle 13 - 2026-05-21
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 12 relational-consistency recovery/readout path.
+- Telegram report was not due.
+- No generator/refiner edits, caption/VLM correction, temporal decoding, broad ROI routing, CLIP-layer fusion, reliability weighting, high-capacity adapters, or new projection-anchor mechanism was started.
+
+Code/config changes:
+- No code or Slurm changes were made in Cycle 13.
+- No jobs were cancelled or relaunched. The active Cycle 12 sweep was running validly, so the correct action was to monitor rather than mutate it.
+
+Operational visibility:
+- This shell could query Slurm with `squeue`/`sacct` and read `/src` logs/tables.
+- The compute-side Slurm warning `couldn't chdir to /src` appears in stderr, but it is non-fatal: each script immediately changes to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`, loads the intended environment, and trains.
+
+Commands/status checks:
+- Ran `squeue -j 8549927,8549929`.
+- Ran `sacct -j 8549927,8549929 --format=JobID,JobName%30,State,ExitCode,Elapsed,NodeList,MaxRSS,ReqMem,Timelimit -P`.
+- Parsed `/src/slurms/c12_rel_s57_8549927_<task>.out/.err` for subject/lambda mapping and live train/test diagnostics.
+- Checked `/src/tables` for Cycle 12 CSVs; none existed yet because training had not completed and evaluator `8549929` had not started.
+
+Slurm state at approximately 2026-05-21 10:35 EDT:
+
+| task | subject | lambda | state | exit | node | elapsed | stdout/stderr | expected checkpoint/artifacts | failure class |
+|---|---:|---:|---|---|---|---|---|---|---|
+| `8549927_0` | 5 | `0` | RUNNING | `0:0` | `della-l05g5` | `00:48:34` | `/src/slurms/c12_rel_s57_8549927_0.out/.err` | `../train_logs/cycle12_subj05_rel0_1sess_150ep/last.pth` | none observed |
+| `8549927_1` | 5 | `1e-3` | RUNNING | `0:0` | `della-l04g15` | `00:48:34` | `/src/slurms/c12_rel_s57_8549927_1.out/.err` | `../train_logs/cycle12_subj05_rel1em3_1sess_150ep/last.pth` | none observed |
+| `8549927_2` | 5 | `3e-3` | RUNNING | `0:0` | `della-l04g14` | `00:48:34` | `/src/slurms/c12_rel_s57_8549927_2.out/.err` | `../train_logs/cycle12_subj05_rel3em3_1sess_150ep/last.pth` | none observed |
+| `8549927_3` | 5 | `1e-2` | RUNNING | `0:0` | `della-l03g3` | `00:48:01` | `/src/slurms/c12_rel_s57_8549927_3.out/.err` | `../train_logs/cycle12_subj05_rel1em2_1sess_150ep/last.pth` | none observed |
+| `8549927_4` | 7 | `0` | RUNNING | `0:0` | `della-l03g2` | `00:48:01` | `/src/slurms/c12_rel_s57_8549927_4.out/.err` | `../train_logs/cycle12_subj07_rel0_1sess_150ep/last.pth` | none observed |
+| `8549927_5` | 7 | `1e-3` | RUNNING | `0:0` | `della-l02g16` | `00:48:01` | `/src/slurms/c12_rel_s57_8549927_5.out/.err` | `../train_logs/cycle12_subj07_rel1em3_1sess_150ep/last.pth` | none observed |
+| `8549927_6` | 7 | `3e-3` | RUNNING | `0:0` | `della-l02g12` | `00:47:30` | `/src/slurms/c12_rel_s57_8549927_6.out/.err` | `../train_logs/cycle12_subj07_rel3em3_1sess_150ep/last.pth` | none observed |
+| `8549927_7` | 7 | `1e-2` | RUNNING | `0:0` | `della-l02g11` | `00:47:30` | `/src/slurms/c12_rel_s57_8549927_7.out/.err` | `../train_logs/cycle12_subj07_rel1em2_1sess_150ep/last.pth` | none observed |
+| `8549929_[0-7]` | 5/7 | all | PENDING | `0:0` | none | `00:00:00` | `/src/slurms/c12_rel_eval_s57_8549929_<task>.out/.err` expected | final CSVs expected under `/src/tables` | dependency-pending, no failure |
+
+Live training diagnostics at approximately epoch 50:
+
+| task | subj | lambda | epoch | test loss | test PixCorr | test fwd/bwd | train loss | train PixCorr | train fwd/bwd | train rel loss | scaled rel | train rel corr | test rel loss | test rel corr |
+|---|---:|---:|---:|---:|---:|---|---:|---:|---|---:|---:|---:|---:|---:|
+| `8549927_0` | 5 | `0` | 50 | 16.6 | 0.205 | 0.460/0.370 | 10.5 | 0.651 | 1.000/1.000 | 0 | 0 | 0 | 0 | 0 |
+| `8549927_1` | 5 | `1e-3` | 50 | 16.6 | 0.213 | 0.500/0.413 | 10.5 | 0.647 | 1.000/1.000 | 0.0164 | 1.64e-5 | 0.269 | 0.197 | 0.308 |
+| `8549927_2` | 5 | `3e-3` | 50 | 16.5 | 0.219 | 0.513/0.347 | 10.5 | 0.645 | 1.000/1.000 | 0.0162 | 4.86e-5 | 0.267 | 0.173 | 0.301 |
+| `8549927_3` | 5 | `1e-2` | 50 | 16.5 | 0.194 | 0.430/0.403 | 10.5 | 0.646 | 1.000/1.000 | 0.0158 | 1.58e-4 | 0.266 | 0.157 | 0.303 |
+| `8549927_4` | 7 | `0` | 50 | 13.6 | 0.214 | 0.600/0.400 | 9.77 | 0.642 | 1.000/1.000 | 0 | 0 | 0 | 0 | 0 |
+| `8549927_5` | 7 | `1e-3` | 50 | 13.5 | 0.252 | 0.580/0.453 | 9.69 | 0.645 | 1.000/1.000 | 0.0158 | 1.58e-5 | 0.255 | 0.138 | 0.245 |
+| `8549927_6` | 7 | `3e-3` | 50 | 16.8 | 0.164 | 0.533/0.380 | 10.4 | 0.625 | 1.000/1.000 | 0.0169 | 5.08e-5 | 0.257 | 0.159 | 0.257 |
+| `8549927_7` | 7 | `1e-2` | 50 | 16.9 | 0.201 | 0.547/0.433 | 10.3 | 0.631 | 1.000/1.000 | 0.0172 | 1.72e-4 | 0.275 | 0.158 | 0.271 |
+
+Metric table status:
+- No Cycle 12 refined CSVs exist yet under `/src/tables`.
+- Because `8549929_[0-7]` is still dependency-pending, PixCorr, SSIM, AlexNet-2, AlexNet-5, Inception, CLIP, EfficientNet distance, SwAV distance, image retrieval, brain retrieval, visual cortex, V1, V2, V3, V4, and higher-visual rows cannot yet be computed for Cycle 12.
+- Therefore no deltas versus same-subject `rel0`, no weak-subject means, and no scientific success/failure decision can be made in this cycle.
+
+Conclusion:
+- Cycle 12 is not unrecoverable. It is actively running and producing expected relational diagnostics.
+- Same-code `rel0` rows correctly log zero relational diagnostics; nonzero rows log finite relational losses and correlations.
+- No operational repair or rerun was appropriate during Cycle 13. The next valid action is to inspect final state for `8549927_[0-7]`; if all tasks complete, let or inspect dependent evaluator `8549929_[0-7]`. If a task fails, rerun only that failed task or its missing evaluator path with the same model name and hyperparameters.
+
+Recommended next research questions:
+- Once `8549929` writes final CSVs, do any nonzero relational rows improve brain retrieval by about 0.02 absolute versus same-subject `rel0` without damaging CLIP, Inception, image retrieval, ROI correlations, EfficientNet distance, or SwAV distance?
+- If all relational rows match `rel0`, audit whether `clip_voxels.flatten(1)` is the actual retrieval-relevant embedding used by `recon_inference.py`.
+- If `1e-2` damages final semantic metrics while `1e-3` or `3e-3` is neutral, narrow the relational lambda grid downward rather than increasing it.
