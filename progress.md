@@ -1275,3 +1275,73 @@ Recommended next research questions:
 - Do the chunked-VAE recovery rows complete inside `04:30:00`, and do final training diagnostics match the Cycle 16 smoke/control behavior?
 - Once CSVs exist, does `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute on subject 5 or 7 without semantic or distance regressions?
 - If the grid is neutral, the next input-side candidate remains reliability-informed training-only dropout using the same train-repeat tensors and same-code control.
+
+## Cycle 18 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 18 recovery/readout plan.
+- Telegram report is not due.
+- No new mechanism, hyperparameter, reliability tensor, checkpoint initialization, evaluator setting, split, mask, or retrieval protocol was introduced.
+
+Recovered scheduler/artifact state:
+- Relaunched Cycle 16 training array `8671676_[0-5]` was partially successful at inspection time:
+  - `8671676_1`: `cycle16_subj05_relgate_low_1sess_150ep`, `RUNNING`, elapsed `00:24:51`, node `della-l03g4`.
+  - `8671676_5`: `cycle16_subj07_relgate_mid_1sess_150ep`, `RUNNING`, elapsed `00:20:07`, node `della-l02g12`.
+  - `8671676_0`: `cycle16_subj05_relgate0_1sess_150ep`, `FAILED 1:0`, elapsed `00:01:43`, MaxRSS `21945336K`, node `della-i14g20`.
+  - `8671676_2`: `cycle16_subj05_relgate_mid_1sess_150ep`, `FAILED 1:0`, elapsed `00:01:04`, MaxRSS `22823040K`, node `della-i14g20`.
+  - `8671676_3`: `cycle16_subj07_relgate0_1sess_150ep`, `FAILED 1:0`, elapsed `00:01:14`, MaxRSS `22632576K`, node `della-i14g20`.
+  - `8671676_4`: `cycle16_subj07_relgate_low_1sess_150ep`, `FAILED 1:0`, elapsed `00:01:13`, MaxRSS `22810816K`, node `della-i14g20`.
+- Failure class for the four failed rows: operational CUDA memory failure at `accelerator.backward(loss)` during epoch 0, not reliability-gating logic. Each traceback reported a 774 MiB allocation failure with about 520-595 MiB free on a 39.49 GiB A100.
+- The stale dependent evaluator array `8671677_[0-5]` remained dependency-pending after parent failures, so it was cancelled.
+- No required Cycle 16 final CSVs were present under `/src/tables` at inspection time.
+- Login-side `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2` is not visible, so checkpoint-path verification was limited to Slurm logs and scheduler state from the login container. This is an observability limit, not an experimental failure.
+
+Reliability/scale diagnostics recovered from logs:
+- `relgate0` rows loaded the reliability tensors and applied exact no-effect scaling:
+  - subj05 `relgate0`: scale mean/min/max `1.000/1.000/1.000`, early/higher scale mean `1.000/1.000`.
+  - subj07 `relgate0`: scale mean/min/max `1.000/1.000/1.000`, early/higher scale mean `1.000/1.000`.
+- Nonzero rows used the intended strengths:
+  - subj05 `relgate_low alpha=0.05`: scale mean/min/max `1.000/0.855/1.164`, early/higher scale mean `1.021/0.992`.
+  - subj05 `relgate_mid alpha=0.10`: scale mean/min/max `1.000/0.750/1.250`, early/higher scale mean `1.043/0.983`.
+  - subj07 `relgate_low alpha=0.05`: scale mean/min/max `1.000/0.864/1.173`, early/higher scale mean `1.034/0.988`.
+  - subj07 `relgate_mid alpha=0.10`: scale mean/min/max `1.000/0.750/1.251`, early/higher scale mean `1.066/0.977`.
+
+Operational repair/relaunch:
+- Added `/src/cycle18_relgate_recover_oom_s57.slurm`.
+  - Relaunches only failed tasks `0,2,3,4`.
+  - Preserves the exact model names, subject mapping, reliability tensors, reliability strengths, batch size `24`, one-session `150` epoch protocol, official multisubject initialization, optimizer/training arguments, and checkpoint names.
+  - Adds only scheduler-level recovery constraints: `--array=0,2,3,4`, `--exclude=della-i14g8,della-i14g20`, and `--chdir=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`.
+- Validation: `bash -n /src/cycle18_relgate_recover_oom_s57.slurm /src/cycle16_relgate_eval_s57.slurm` passed.
+- Submitted recovery array: `sbatch /src/cycle18_relgate_recover_oom_s57.slurm`, job `8672355_[0,2,3,4]`.
+  - At status check, `8672355_0` (`cycle16_subj05_relgate0_1sess_150ep`) was `RUNNING`, elapsed `00:04:27`, node `della-l05g2`, and had cleared the original epoch-0 OOM point with logged epoch-1 metrics.
+  - `8672355_2`, `8672355_3`, and `8672355_4` were `PENDING (Priority)`.
+- Submitted replacement evaluator: `sbatch --dependency=afterok:8671676_1:8671676_5:8672355 /src/cycle16_relgate_eval_s57.slurm`, job `8672425_[0-5]`.
+  - `scontrol` verified dependency as `afterok:8671676_1`, `afterok:8671676_5`, and `afterok:8672355_*`.
+  - At status check, `8672425_[0-5]` was `PENDING (Dependency)`.
+
+Observed training diagnostics so far:
+- `8672355_0` subj05 `relgate0` epoch-1 diagnostic matched the Cycle 17 smoke pattern and verified no-effect reliability:
+  - test loss `14.9`, test blurry PixCorr `0.244`, test fwd/bwd `0.157/0.0567`;
+  - train loss `14.6`, train blurry PixCorr `0.165`, train fwd/bwd `0.297/0.147`;
+  - train/test `rel_loss=0` and `rel_sim_corr=0`.
+- `8671676_1` and `8671676_5` were both beyond epoch 0 and continuing to log finite losses/retrieval. No final training metrics were available yet.
+
+Metric table status:
+- Required refined CSVs are still unavailable:
+  - `/src/tables/cycle16_subj05_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+- Sensitivity diagnostic was not run because final checkpoints for all six rows are not yet complete/visible.
+
+Scientific decision:
+- No refined-metric decision can be made in Cycle 18 yet.
+- The no-effect `relgate0` controls remain verified at scale level.
+- The only active issue is operational completion of the six exact rows. Next action is to inspect `8671676_1`, `8671676_5`, `8672355_[0,2,3,4]`, then allow `8672425_[0-5]` to run if all training dependencies finish successfully.
+
+Recommended next research questions:
+- Do the recovery rows excluded from `della-i14g8/della-i14g20` complete within `04:30:00`, or is a second semantic-preserving memory mitigation needed?
+- Once `8672425_[0-5]` writes CSVs, does `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute versus same-subject `relgate0` without semantic/distance regressions?
+- If centered reliability scaling is neutral or harmful, should the next mechanism be reliability-informed training-only dropout using the same leakage-free tensors and a same-code no-dropout control?
