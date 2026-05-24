@@ -1599,3 +1599,62 @@ Cycle 21 smoke/full-launch addendum:
 - Launched full required training: `sbatch /src/cycle21_reldrop_train_s57.slurm`, job `8708124_[0-5]`, pending at last check.
 - Launched dependent evaluator: `sbatch --dependency=afterok:8708124 /src/cycle21_reldrop_eval_s57.slurm`, job `8708125_[0-5]`, dependency-pending at last check. `scontrol` verified dependency `afterok:8708124_*` and workdir `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`.
 - Updated Telegram-ready status: Smoke passed and full Cycle 21 is now queued. Full rows are `cycle21_subj05_reldrop0_1sess_150ep`, `cycle21_subj05_reldrop_low_1sess_150ep`, `cycle21_subj05_reldrop_mid_1sess_150ep`, `cycle21_subj07_reldrop0_1sess_150ep`, `cycle21_subj07_reldrop_low_1sess_150ep`, and `cycle21_subj07_reldrop_mid_1sess_150ep`; final refined CSVs are still pending training and dependent evaluation.
+
+## Cycle 22 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 22 recovery/readout plan.
+- Telegram report is not due.
+- No code, reliability tensor, dropout strength, split, mask, initialization, evaluator setting, candidate pool, or model name was changed.
+
+Scheduler state recovered:
+- Required training array `8708124_[0-5]` remains `PENDING (Priority)`, elapsed `00:00:00`, exit `0:0`, no MaxRSS and no allocated node yet. The array is still the first source of truth for all six exact Cycle 21 rows.
+- Training tasks map as:
+  - `8708124_0`: `cycle21_subj05_reldrop0_1sess_150ep`, pending; scheduled start shown as `2026-05-24T16:24:00`, scheduled node `della-l02g13`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_0.out`, stderr `.err`.
+  - `8708124_1`: `cycle21_subj05_reldrop_low_1sess_150ep`, pending; scheduled start `2026-05-24T16:54:00`, scheduled node `della-l05g7`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_1.out`, stderr `.err`.
+  - `8708124_2`: `cycle21_subj05_reldrop_mid_1sess_150ep`, pending; scheduled start `2026-05-24T16:54:00`, scheduled node `della-l04g6`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_2.out`, stderr `.err`.
+  - `8708124_3`: `cycle21_subj07_reldrop0_1sess_150ep`, pending; no scheduled start/node shown yet, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_3.out`, stderr `.err`.
+  - `8708124_4`: `cycle21_subj07_reldrop_low_1sess_150ep`, pending; no scheduled start/node shown yet, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_4.out`, stderr `.err`.
+  - `8708124_5`: `cycle21_subj07_reldrop_mid_1sess_150ep`, pending; no scheduled start/node shown yet, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_5.out`, stderr `.err`.
+- Training array settings verified by `scontrol`: `04:30:00`, `64G`, one `a100`, `gpu-short`, workdir `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`, `--exclude=della-i14g8,della-i14g19,della-i14g20`, command `/src/cycle21_reldrop_train_s57.slurm`.
+- Dependent evaluator array `8708125_[0-5]` remains `PENDING (Dependency)`, elapsed `00:00:00`, exit `0:0`, no MaxRSS and no node. Dependency is `afterok:8708124_*`, workdir `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`, time `04:00:00`, memory `64G`.
+- Scheduler observability is partial from the login/container side: `/scratch/gpfs/...` paths used by compute jobs are not directly inspectable here for pending-job artifacts, so current artifact checks are based on visible `/src` paths plus Slurm metadata.
+
+Artifact state:
+- None of the six required full-row checkpoints are visible yet at `/src/train_logs/<model_name>/last.pth`, and no compute-visible `/scratch/.../train_logs/<model_name>/last.pth` can be confirmed before the pending jobs start.
+- No enhanced reconstruction tensors exist yet under `/src/evals/<model_name>/` for the six required rows.
+- No final CSVs exist yet at `/src/tables/<model_name>_all_enhancedrecons.csv`.
+- Therefore no final evaluator row has used enhanced reconstructions yet; the evaluator is correctly waiting on successful training completion.
+
+Smoke diagnostics carried forward:
+- Smoke `8707727_[0-1]` completed successfully before Cycle 22 and remains the required preflight gate.
+- `8707727_0`/`8707727_1` both completed on `della-l09g7` in `00:05:40`; MaxRSS was `21830856K` for `reldrop0` and `21876712K` for `reldrop_low`.
+- Smoke `reldrop0` final realized train drop rates all/early/higher were `0.0000/0.0000/0.0000`.
+- Smoke `reldrop_low` final realized train drop rates all/early/higher were `0.0646/0.0562/0.0675`, matching the assigned probability scale.
+- Smoke final diagnostics were finite: `reldrop0` test loss `12.3`, blurry PixCorr `0.168`, test fwd/bwd `0.413/0.253`; `reldrop_low` test loss `12.3`, blurry PixCorr `0.167`, test fwd/bwd `0.403/0.257`.
+
+Reliability/dropout provenance:
+- Reliability tensors remain unchanged:
+  - `/src/reliability/subj05_trainrepeat_reliability.pt`
+  - `/src/reliability/subj07_trainrepeat_reliability.pt`
+- Voxel/ROI counts remain: subj05 `13039` total, early/higher `3661/9378`; subj07 `12682` total, early/higher `3251/9431`.
+- Assigned dropout probabilities remain:
+  - subj05 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`.
+  - subj05 `reldrop_low`: all mean `0.0625`, range `0.0200-0.1000`, early/higher mean `0.0570/0.0647`, reliability/probability corr `-1.000`.
+  - subj05 `reldrop_mid`: all mean `0.1144`, range `0.0400-0.1800`, early/higher mean `0.1047/0.1182`, reliability/probability corr about `-1.000`.
+  - subj07 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`.
+  - subj07 `reldrop_low`: all mean `0.0648`, range `0.0200-0.1000`, early/higher mean `0.0561/0.0678`, reliability/probability corr `-1.000`.
+  - subj07 `reldrop_mid`: all mean `0.1184`, range `0.0400-0.1800`, early/higher mean `0.1031/0.1236`, reliability/probability corr about `-1.000`.
+
+Metrics/readout status:
+- No Cycle 22 final training diagnostics, refined metric CSVs, deltas, or sensitivity diagnostic are available because the full training array is still pending.
+- The mechanism diagnostic was not run, per plan, because the required full checkpoints do not yet exist.
+
+Conclusion:
+- Operational completion is still pending scheduler allocation, not blocked by a code or artifact failure detected in Cycle 22.
+- The next valid action is to inspect `8708124_[0-5]` after launch, parse train logs for final train/test diagnostics and realized dropout rates, then allow dependency evaluator `8708125_[0-5]` to run. If any checkpoint completes but its CSV is missing, rerun only the fixed evaluator path for that exact model name.
+
+Recommended next research questions:
+- Do all six `8708124` training tasks start on the scheduled/non-excluded nodes and complete within `04:30:00`?
+- Do the full rows preserve the smoke behavior: `reldrop0` realized rates exactly `0.0000/0.0000/0.0000` and nonzero rows realized rates close to assigned all/early/higher probabilities?
+- Once evaluator `8708125_[0-5]` writes CSVs, does either nonzero strength improve same-subject BrainRet by about `0.02` absolute without degrading CLIP, Inception, retrieval, EfficientNet/SwAV distances, visual cortex, or higher visual correlation?
