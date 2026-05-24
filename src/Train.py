@@ -216,12 +216,24 @@ parser.add_argument(
     "--max_lr",type=float,default=3e-4,
 )
 parser.add_argument(
-    "--reliability_mode", type=str, default="none", choices=["none", "soft_weight", "topk_mask"],
+    "--reliability_mode", type=str, default="none", choices=["none", "centered_scale"],
     help="Reliability-aware voxel input mode. Defaults to none to preserve baseline behavior.",
 )
 parser.add_argument(
-    "--reliability_topk", type=int, default=0,
-    help="Number of voxels to keep for reliability_mode=topk_mask. 0 keeps the top half.",
+    "--reliability_path", type=str, default=None,
+    help="Path to a train-repeat reliability tensor saved by estimate_reliability.py.",
+)
+parser.add_argument(
+    "--reliability_strength", type=float, default=0.0,
+    help="Centered reliability scaling strength alpha. 0 is a no-effect same-code control.",
+)
+parser.add_argument(
+    "--reliability_clip_min", type=float, default=0.75,
+    help="Minimum centered reliability scale.",
+)
+parser.add_argument(
+    "--reliability_clip_max", type=float, default=1.25,
+    help="Maximum centered reliability scale.",
 )
 parser.add_argument(
     "--adapter_prior_weight", type=float, default=0.0,
@@ -330,56 +342,81 @@ voxels = {}
 reliability_inputs = {}
 reliability_summaries = {}
 
-def build_reliability_input(betas, mode, topk):
-    """Builds a deterministic fallback reliability proxy when NCSNR metadata is unavailable."""
+def load_reliability_tensor(path):
+    if path is None:
+        raise ValueError("--reliability_path is required when --reliability_mode is not none")
+    payload = torch.load(path, map_location="cpu")
+    if isinstance(payload, dict):
+        reliability = payload.get("reliability", None)
+        provenance = payload.get("summary", {})
+        early_mask = payload.get("early_vis_mask", None)
+        higher_mask = payload.get("higher_vis_mask", None)
+    else:
+        reliability = payload
+        provenance = {}
+        early_mask = None
+        higher_mask = None
+    if reliability is None:
+        raise ValueError(f"No 'reliability' tensor found in {path}")
+    return reliability.float().flatten(), provenance, early_mask, higher_mask
+
+def build_reliability_input(num_voxels_value, mode, path, strength, clip_min, clip_max):
     if mode == "none":
         return None, {
             "mode": mode,
             "source": "disabled",
-            "num_voxels": int(betas.shape[-1]),
-            "active_voxels": int(betas.shape[-1]),
+            "path": path,
+            "strength": float(strength),
+            "num_voxels": int(num_voxels_value),
+            "scale_mean": 1.0,
+            "scale_min": 1.0,
+            "scale_max": 1.0,
         }
-
-    # Fallback proxy: voxelwise response variance across available training betas.
-    # This is not NCSNR; it is logged as a proxy so results are interpreted accordingly.
-    reliability = torch.std(betas.float(), dim=0)
-    reliability = torch.nan_to_num(reliability, nan=0.0, posinf=0.0, neginf=0.0)
-    reliability = torch.clamp(reliability, min=0.0)
-    if float(reliability.max()) == 0.0:
-        reliability = torch.ones_like(reliability)
-
-    num_vox = int(reliability.numel())
-    active_voxels = num_vox
-    if mode == "soft_weight":
-        weights = reliability / torch.clamp(reliability.mean(), min=1e-6)
-        weights = torch.clamp(weights, 0.25, 4.0).to(data_type).reshape(1, 1, -1)
-        transform = weights
-    elif mode == "topk_mask":
-        active_voxels = int(topk) if int(topk) > 0 else max(1, num_vox // 2)
-        active_voxels = min(max(1, active_voxels), num_vox)
-        keep_idx = torch.topk(reliability, k=active_voxels).indices
-        mask = torch.zeros_like(reliability, dtype=data_type)
-        mask[keep_idx] = 1
-        transform = mask.reshape(1, 1, -1)
-    else:
+    if mode != "centered_scale":
         raise ValueError(f"Unknown reliability_mode: {mode}")
 
-    quantiles = torch.quantile(reliability, torch.tensor([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]))
+    reliability, provenance, early_mask, higher_mask = load_reliability_tensor(path)
+    if int(reliability.numel()) != int(num_voxels_value):
+        raise ValueError(
+            f"Reliability tensor length {int(reliability.numel())} does not match voxel count {int(num_voxels_value)}"
+        )
+    reliability = torch.nan_to_num(reliability, nan=0.0, posinf=0.0, neginf=0.0)
+    if float(strength) == 0.0:
+        scale = torch.ones_like(reliability)
+    else:
+        rel_std = torch.clamp(reliability.std(), min=1e-6)
+        centered = (reliability - reliability.mean()) / rel_std
+        scale = 1.0 + float(strength) * centered
+        scale = torch.clamp(scale, float(clip_min), float(clip_max))
+        scale = scale / torch.clamp(scale.mean(), min=1e-6)
+    transform = scale.to(data_type).reshape(1, 1, -1)
+
     summary = {
         "mode": mode,
-        "source": "voxelwise_train_beta_std_proxy_no_ncsnr_found",
-        "num_voxels": num_vox,
-        "active_voxels": active_voxels,
-        "mean": float(reliability.mean()),
-        "std": float(reliability.std()),
-        "min": float(quantiles[0]),
-        "p10": float(quantiles[1]),
-        "p25": float(quantiles[2]),
-        "median": float(quantiles[3]),
-        "p75": float(quantiles[4]),
-        "p90": float(quantiles[5]),
-        "max": float(quantiles[6]),
+        "source": "train_repeat_split_half_reliability_tensor",
+        "path": path,
+        "strength": float(strength),
+        "clip_min": float(clip_min),
+        "clip_max": float(clip_max),
+        "num_voxels": int(reliability.numel()),
+        "reliability_mean": float(reliability.mean()),
+        "reliability_std": float(reliability.std()),
+        "scale_mean": float(scale.mean()),
+        "scale_std": float(scale.std()),
+        "scale_min": float(scale.min()),
+        "scale_max": float(scale.max()),
+        "provenance": provenance,
     }
+    if early_mask is not None:
+        early_mask = early_mask.bool().flatten()
+        if int(early_mask.numel()) == int(reliability.numel()) and bool(early_mask.any()):
+            summary["early_scale_mean"] = float(scale[early_mask].mean())
+            summary["early_reliability_mean"] = float(reliability[early_mask].mean())
+    if higher_mask is not None:
+        higher_mask = higher_mask.bool().flatten()
+        if int(higher_mask.numel()) == int(reliability.numel()) and bool(higher_mask.any()):
+            summary["higher_scale_mean"] = float(scale[higher_mask].mean())
+            summary["higher_reliability_mean"] = float(reliability[higher_mask].mean())
     return transform, summary
 
 def apply_reliability(voxel, subj_key):
@@ -409,8 +446,12 @@ for s in subj_list:
     num_voxels_list.append(betas[0].shape[-1])
     num_voxels[f'subj0{s}'] = betas[0].shape[-1]
     voxels[f'subj0{s}'] = betas
+    subj_reliability_path = reliability_path
+    if reliability_path is not None and len(subj_list) > 1:
+        subj_reliability_path = reliability_path.format(subj=s, subj02=f"{s:02d}")
     reliability_inputs[f'subj0{s}'], reliability_summaries[f'subj0{s}'] = build_reliability_input(
-        betas, reliability_mode, reliability_topk)
+        num_voxels[f'subj0{s}'], reliability_mode, subj_reliability_path,
+        reliability_strength, reliability_clip_min, reliability_clip_max)
     print(f"reliability summary for subj0{s}: {reliability_summaries[f'subj0{s}']}")
     print(f"num_voxels for subj0{s}: {num_voxels[f'subj0{s}']}")
 

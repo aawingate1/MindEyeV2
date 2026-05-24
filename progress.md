@@ -1105,3 +1105,98 @@ Recommended next research questions:
 - Does subject 7 `rel1e-3` repeat its sub-threshold brain-retrieval gain, or was it evaluation/training noise?
 - Before abandoning the mechanism entirely, confirm whether `clip_voxels.flatten(1)` is the same embedding used by `recon_inference.py`, retrieval evaluation, and prior conditioning.
 - For the next planned mechanism, what reliability estimate is stable when computed only from repeated training images after MindEye beta preprocessing?
+
+## Cycle 16 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed the Cycle 16 reliability-aware voxel adaptation plan only.
+- Telegram report is due; report-ready update is included below.
+- Implemented leakage-free train-repeat reliability estimation and a disabled-by-default tensor-backed reliability gate.
+- Launched the required 1-hour smoke array before any full training.
+- After smoke passed, launched the small subject 5/7 training grid and dependent fixed-path evaluator.
+
+Code/config changes:
+- Added `/src/estimate_reliability.py`.
+  - Reads the exact one-session WebDataset train shard (`wds/subj0{5,7}/train/0.tar`), `COCO_73k_subj_indices.hdf5`, `betas_all_subj0{5,7}_fp32_renorm.hdf5`, and `brain_region_masks.hdf5`.
+  - Verifies `behav[:,0,0]` image IDs against `COCO_73k_subj_indices[subj][behav[:,0,5]]`.
+  - Computes voxelwise split-half repeat consistency from repeated training images only.
+  - Excludes old test and `new_test` overlaps from reliability inputs.
+  - Shrinks raw reliabilities 25% toward ROI means for early and higher visual masks.
+  - Writes `/src/reliability/subj05_trainrepeat_reliability.pt`, `/src/reliability/subj07_trainrepeat_reliability.pt`, `/src/reliability/trainrepeat_reliability_summary.json`, and `/src/reliability/trainrepeat_reliability_summary.csv`.
+- Updated `/src/Train.py`.
+  - Replaced the prior variance-proxy/hard top-k reliability hook with `--reliability_mode {none,centered_scale}`, `--reliability_path`, `--reliability_strength`, and conservative clip bounds.
+  - `relgate0` uses the reliability tensor with `strength=0`, verifies tensor shape, and applies scale exactly 1.0.
+  - Nonzero rows use centered input scaling, clipped to `[0.75, 1.25]` and re-centered to mean scale 1.0.
+  - Logs reliability provenance plus scale mean/min/max and early/higher reliability and scale means to `reliability_summary.json`.
+- Added Slurm scripts:
+  - `/src/cycle16_relgate_smoke.slurm`
+  - `/src/cycle16_relgate_train_s57.slurm`
+  - `/src/cycle16_relgate_eval_s57.slurm`
+
+Preflight diagnostics:
+
+| subject | voxel count | train rows | unique train images | repeat images | repeat trials | invalid/degenerate voxels | train-new_test overlap | repeat-new_test overlap | early/higher mask counts |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 5 | 13039 | 688 | 536 | 123 | 275 | 0/0 | 0 | 0 | 3661/9378 |
+| 7 | 12682 | 688 | 536 | 123 | 275 | 0/0 | 0 | 0 | 3251/9431 |
+
+Reliability summaries:
+
+| subject | raw mean | raw median | raw std | raw early mean | raw higher mean | shrunk mean | shrunk median | shrunk std | shrunk p05/p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 5 | 0.221351 | 0.209002 | 0.165043 | 0.275172 | 0.200341 | 0.221351 | 0.211106 | 0.125764 | 0.029087 / 0.446512 |
+| 7 | 0.171797 | 0.154757 | 0.164491 | 0.257655 | 0.142201 | 0.171797 | 0.156331 | 0.127795 | -0.013230 / 0.413119 |
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/estimate_reliability.py /src/Train.py` passed.
+- `bash -n /src/cycle16_relgate_smoke.slurm`, `bash -n /src/cycle16_relgate_train_s57.slurm`, and `bash -n /src/cycle16_relgate_eval_s57.slurm` passed.
+
+Smoke jobs:
+- Submitted `sbatch /src/cycle16_relgate_smoke.slurm` as job `8670161`.
+- Tasks:
+  - `8670161_0`: subj05 `relgate0`, completed `0:0`, elapsed `00:06:34`, MaxRSS `21606288K`.
+  - `8670161_1`: subj05 `relgate_low` (`alpha=0.05`), completed `0:0`, elapsed `00:06:43`, MaxRSS `22894108K`.
+  - `8670161_2`: subj07 `relgate0`, completed `0:0`, elapsed `00:06:46`, MaxRSS `21520724K`.
+  - `8670161_3`: subj07 `relgate_low` (`alpha=0.05`), completed `0:0`, elapsed `00:05:21`, MaxRSS `22798496K`.
+- Failure class for all smoke rows: none.
+- The recurring Slurm `couldn't chdir to /src` warning appeared and remained non-fatal, as in prior cycles.
+- Smoke gate statistics:
+  - subj05 `relgate0`: scale mean/min/max `1.000/1.000/1.000`, early/higher scale mean `1.000/1.000`.
+  - subj05 `relgate_low`: scale mean/min/max `1.000/0.855/1.164`, early/higher scale mean `1.021/0.992`.
+  - subj07 `relgate0`: scale mean/min/max `1.000/1.000/1.000`, early/higher scale mean `1.000/1.000`.
+  - subj07 `relgate_low`: scale mean/min/max `1.000/0.864/1.173`, early/higher scale mean `1.034/0.988`.
+- Smoke final 3-epoch diagnostics:
+  - subj05 `relgate0`: test loss `13.1`, test PixCorr `0.250`, test fwd/bwd `0.407/0.283`; train loss `11.4`, train PixCorr `0.341`, train fwd/bwd `0.992/0.972`.
+  - subj05 `relgate_low`: test loss `13.0`, test PixCorr `0.254`, test fwd/bwd `0.417/0.287`; train loss `11.4`, train PixCorr `0.342`, train fwd/bwd `0.992/0.972`.
+  - subj07 `relgate0`: test loss `13.4`, test PixCorr `0.196`, test fwd/bwd `0.430/0.267`; train loss `11.5`, train PixCorr `0.286`, train fwd/bwd `0.976/0.966`.
+  - subj07 `relgate_low`: test loss `13.3`, test PixCorr `0.198`, test fwd/bwd `0.430/0.273`; train loss `11.5`, train PixCorr `0.287`, train fwd/bwd `0.977/0.965`.
+
+Full training/evaluation launched:
+- Submitted `/src/cycle16_relgate_train_s57.slurm` as job `8671041`.
+- Submitted `/src/cycle16_relgate_eval_s57.slurm` as dependent job `8671042` with `afterok:8671041`.
+- Rows:
+  - subj05 `relgate0`, `alpha=0.00`, model `cycle16_subj05_relgate0_1sess_150ep`.
+  - subj05 `relgate_low`, `alpha=0.05`, model `cycle16_subj05_relgate_low_1sess_150ep`.
+  - subj05 `relgate_mid`, `alpha=0.10`, model `cycle16_subj05_relgate_mid_1sess_150ep`.
+  - subj07 `relgate0`, `alpha=0.00`, model `cycle16_subj07_relgate0_1sess_150ep`.
+  - subj07 `relgate_low`, `alpha=0.05`, model `cycle16_subj07_relgate_low_1sess_150ep`.
+  - subj07 `relgate_mid`, `alpha=0.10`, model `cycle16_subj07_relgate_mid_1sess_150ep`.
+- At launch/status check, `8671041_[0-5]` was pending for priority, and `8671042_[0-5]` was dependency-pending.
+- Expected final tables are `/src/tables/cycle16_subj0{5,7}_relgate{0,_low,_mid}_1sess_150ep_all_enhancedrecons.csv` after evaluator completion.
+
+Current scientific decision:
+- Operational preflight succeeded: train-repeat reliability is available, length-matched, ROI-aligned, and leakage checks passed for subjects 5 and 7.
+- Smoke succeeded: no NaNs, finite losses, valid checkpoint writing, and conservative gate statistics.
+- No refined metric decision is available yet because the 150-epoch training/evaluation grid has only been launched.
+- Do not claim a MindEyeV2 improvement until dependent evaluator job `8671042` writes final CSVs and deltas versus same-subject `relgate0` are computed.
+
+Telegram report-ready update:
+- Cycle 16 implemented train-repeat reliability gating for MindEyeV2 weak subjects 5 and 7. Reliability was computed only from one-session training repeats, with zero overlap against old test or `new_test`; vectors match expected voxel counts (`13039`/`12682`) and ROI masks (`3661/9378` early/higher for subj05, `3251/9431` for subj07).
+- Reliability tensors and diagnostics are in `/src/reliability/`. Mean shrunk reliability is `0.221` for subj05 and `0.172` for subj07; early visual reliability is higher than higher-visual in both subjects.
+- The 1-hour smoke array `8670161` completed all four tasks successfully. Low gate `alpha=0.05` produced finite losses and conservative scales: subj05 scale range `0.855-1.164`, subj07 scale range `0.864-1.173`; `relgate0` scales were exactly `1.0`.
+- Full training grid `8671041` is queued for subjects 5/7 and rows `relgate0`, `relgate_low`, `relgate_mid`; dependent evaluator `8671042` will run the fixed `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` path. No final brain retrieval claim yet.
+
+Recommended next research questions:
+- After `8671042` completes, does `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute versus same-subject `relgate0` without hurting CLIP, Inception, image retrieval, EfficientNet distance, SwAV distance, visual cortex, or higher-visual correlation?
+- If centered scaling is neutral, should the next input-side variant use reliability-informed training-only dropout while preserving evaluation-time inputs?
+- If one subject improves and the other does not, is the effect explained by the stronger early/higher reliability separation in subject 7 versus subject 5?
