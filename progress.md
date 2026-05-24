@@ -1200,3 +1200,78 @@ Recommended next research questions:
 - After `8671042` completes, does `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute versus same-subject `relgate0` without hurting CLIP, Inception, image retrieval, EfficientNet distance, SwAV distance, visual cortex, or higher-visual correlation?
 - If centered scaling is neutral, should the next input-side variant use reliability-informed training-only dropout while preserving evaluation-time inputs?
 - If one subject improves and the other does not, is the effect explained by the stronger early/higher reliability separation in subject 7 versus subject 5?
+
+## Cycle 17 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 16 reliability-gating recovery/readout plan.
+- Telegram report is not due.
+- No new mechanism was launched.
+
+Recovered Slurm/artifact state:
+- Training array `8671041_[0-5]` failed on all six rows before completing epoch 0.
+- Dependent evaluator `8671042_[0-5]` was stuck in `DependencyNeverSatisfied`; it was cancelled because no checkpoint row completed.
+- No Cycle 16 final CSVs were present under `/src/tables` at recovery time.
+- Failure class for all six training rows: operational CUDA memory failure in frozen SD VAE target encoding, not a reliability-gating logic failure.
+
+Original failed rows:
+
+| task | model | state | elapsed | MaxRSS | node | stdout/stderr | failure |
+|---|---|---:|---:|---:|---|---|---|
+| `8671041_0` | `cycle16_subj05_relgate0_1sess_150ep` | `FAILED 1:0` | `00:01:41` | `21608680K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_0.out/.err` | OOM at `autoenc.encode` |
+| `8671041_1` | `cycle16_subj05_relgate_low_1sess_150ep` | `FAILED 1:0` | `00:01:11` | `22809724K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_1.out/.err` | OOM at `autoenc.encode` |
+| `8671041_2` | `cycle16_subj05_relgate_mid_1sess_150ep` | `FAILED 1:0` | `00:01:11` | `22826096K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_2.out/.err` | OOM at `autoenc.encode` |
+| `8671041_3` | `cycle16_subj07_relgate0_1sess_150ep` | `FAILED 1:0` | `00:01:13` | `21442760K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_3.out/.err` | OOM at `autoenc.encode` |
+| `8671041_4` | `cycle16_subj07_relgate_low_1sess_150ep` | `FAILED 1:0` | `00:01:14` | `22811640K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_4.out/.err` | OOM at `autoenc.encode` |
+| `8671041_5` | `cycle16_subj07_relgate_mid_1sess_150ep` | `FAILED 1:0` | `00:01:13` | `22809616K` | `della-i14g8` | `/src/slurms/c16_relgate_s57_8671041_5.out/.err` | OOM at `autoenc.encode` |
+
+Reliability-gate checks from the failed pre-epoch logs:
+- `relgate0` rows loaded the reliability tensors but applied no effect:
+  - subj05 scale mean/min/max `1.000/1.000/1.000`; early/higher scale mean `1.000/1.000`.
+  - subj07 scale mean/min/max `1.000/1.000/1.000`; early/higher scale mean `1.000/1.000`.
+- Nonzero rows used the intended strengths:
+  - subj05 `relgate_low alpha=0.05`: scale mean/min/max `1.000/0.855/1.164`; early/higher scale mean `1.021/0.992`.
+  - subj05 `relgate_mid alpha=0.10`: scale mean/min/max `1.000/0.750/1.250`; early/higher scale mean `1.043/0.983`.
+  - subj07 `relgate_low alpha=0.05`: scale mean/min/max `1.000/0.864/1.173`; early/higher scale mean `1.034/0.988`.
+  - subj07 `relgate_mid alpha=0.10`: scale mean/min/max `1.000/0.750/1.251`; early/higher scale mean `1.066/0.977`.
+
+Operational repair:
+- Patched `/src/Train.py` to encode SD VAE target latents in chunks of 8 under the existing `torch.no_grad()` block:
+  - added `encode_autoenc_latents(autoenc, image_batch, chunk_size=8)`;
+  - replaced the batch-24 `autoenc.encode(2*image-1)` call with the chunked helper.
+- This does not change model inputs, labels, targets, losses, reliability tensors, checkpoint initialization, optimizer settings, or evaluation settings. It only reduces peak memory for a frozen target encoder.
+- Updated `/src/cycle16_relgate_train_s57.slurm` wall time from `03:00:00` to `04:30:00` after the chunked smoke showed slower epoch timing. Memory remains `64G`, one A100.
+- Added `/src/cycle17_relgate_fullmix_smoke.slurm` for a one-hour full-mix smoke with `num_epochs=150`, batch 24, subject 5 `relgate0`, so the early BiMixCo path matches the failed production run.
+
+Validation and smoke:
+- `/src/fmri/bin/python -m py_compile /src/Train.py` passed.
+- `bash -n /src/cycle17_relgate_fullmix_smoke.slurm /src/cycle16_relgate_train_s57.slurm /src/cycle16_relgate_eval_s57.slurm` passed.
+- Submitted smoke `8671597`; it started on `della-l09g7`, passed the previous OOM point, completed epoch 0 metrics, and was cancelled intentionally after `00:02:55` to avoid wasting the one-hour test allocation.
+- Smoke epoch-0 metrics:
+  - test loss `14.9`, test blurry PixCorr `0.244`, test fwd/bwd `0.157/0.0567`;
+  - train loss `14.6`, train blurry PixCorr `0.165`, train fwd/bwd `0.297/0.147`.
+
+Recovery jobs launched:
+- Relaunched the exact six-row Cycle 16 grid with original model names: `sbatch /src/cycle16_relgate_train_s57.slurm`, job `8671676_[0-5]`.
+- Relaunched dependent fixed-path evaluator: `sbatch --dependency=afterok:8671676 /src/cycle16_relgate_eval_s57.slurm`, job `8671677_[0-5]`.
+- At write time, `8671676_[0-5]` is pending with `04:30:00` time limit and `8671677_[0-5]` is dependency-pending.
+
+Metric table status:
+- Final refined CSVs are still unavailable because the recovery training/evaluation arrays have not completed.
+- Required pending CSVs remain:
+  - `/src/tables/cycle16_subj05_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+
+Scientific decision:
+- No refined-metric decision can be made yet.
+- The reliability-gate implementation remains operationally valid: leakage checks, tensor lengths, ROI masks, and no-effect `relgate0` scaling are still verified.
+- Next action is to inspect `8671676_[0-5]`. If training completes, allow `8671677_[0-5]` to run and compute the subject-wise deltas versus same-code `relgate0`; if a row times out, resume or rerun only the affected row with the same subject, model name, reliability strength, and hyperparameters.
+
+Recommended next research questions:
+- Do the chunked-VAE recovery rows complete inside `04:30:00`, and do final training diagnostics match the Cycle 16 smoke/control behavior?
+- Once CSVs exist, does `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute on subject 5 or 7 without semantic or distance regressions?
+- If the grid is neutral, the next input-side candidate remains reliability-informed training-only dropout using the same train-repeat tensors and same-code control.

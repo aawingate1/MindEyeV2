@@ -425,6 +425,13 @@ def apply_reliability(voxel, subj_key):
         return voxel
     return voxel * transform.to(voxel.device, dtype=voxel.dtype)
 
+def encode_autoenc_latents(autoenc, image_batch, chunk_size=8):
+    latents = []
+    for start in range(0, len(image_batch), chunk_size):
+        chunk = image_batch[start:start + chunk_size]
+        latents.append(autoenc.encode(2 * chunk - 1).latent_dist.mode())
+    return torch.cat(latents, dim=0) * 0.18215
+
 for s in subj_list:
     print(f"Training with {num_sessions} sessions")
     if multi_subject:
@@ -1122,7 +1129,7 @@ for epoch in progress_bar:
                 image_enc_pred, transformer_feats = blurry_image_enc_
 
                 with torch.no_grad():
-                    image_enc = autoenc.encode(2*image-1).latent_dist.mode() * 0.18215
+                    image_enc = encode_autoenc_latents(autoenc, image, chunk_size=8)
                 loss_blurry = l1(image_enc_pred, image_enc)
                 loss_blurry_total += loss_blurry.item()
 

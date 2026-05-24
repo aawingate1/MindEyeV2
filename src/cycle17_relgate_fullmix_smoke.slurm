@@ -1,27 +1,21 @@
 #!/bin/bash
 #SBATCH --account=knorman
-#SBATCH --job-name=c16_relgate_s57
+#SBATCH --job-name=c17_relgate_fullmix_smoke
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=04:30:00
+#SBATCH --time=01:00:00
 #SBATCH --mem=64G
-#SBATCH --array=0-5
-#SBATCH -e /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.err
-#SBATCH -o /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.out
+#SBATCH -e /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%j.err
+#SBATCH -o /scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%j.out
 #SBATCH --no-requeue
 
 SRC_DIR=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src
-SUBJECTS=(5 7)
-TAGS=(relgate0 relgate_low relgate_mid)
-STRENGTHS=(0 0.05 0.10)
-SUBJ_INDEX=$((SLURM_ARRAY_TASK_ID / ${#TAGS[@]}))
-TAG_INDEX=$((SLURM_ARRAY_TASK_ID % ${#TAGS[@]}))
-SUBJ=${SUBJECTS[$SUBJ_INDEX]}
-REL_TAG=${TAGS[$TAG_INDEX]}
-REL_STRENGTH=${STRENGTHS[$TAG_INDEX]}
-MODEL_NAME=cycle16_subj0${SUBJ}_${REL_TAG}_1sess_150ep
-CKPT_DIR="${SRC_DIR}/train_logs/final_multisubject_subj0${SUBJ}"
-REL_PATH="${SRC_DIR}/reliability/subj0${SUBJ}_trainrepeat_reliability.pt"
+SUBJ=5
+REL_TAG=relgate0
+REL_STRENGTH=0
+MODEL_NAME=cycle17_smoke_subj05_relgate0_fullmix_150ep
+CKPT_DIR="${SRC_DIR}/train_logs/final_multisubject_subj05"
+REL_PATH="${SRC_DIR}/reliability/subj05_trainrepeat_reliability.pt"
 
 cd "${SRC_DIR}"
 source /etc/profile.d/modules.sh
@@ -29,9 +23,8 @@ module load anaconda3/2024.2
 source fmri/bin/activate
 mkdir -p slurms
 
-echo "Cycle 16 reliability-gate train"
+echo "Cycle 17 reliability-gate full-mix smoke"
 echo "SRC_DIR=${SRC_DIR}"
-echo "TASK=${SLURM_ARRAY_TASK_ID}"
 echo "SUBJ=${SUBJ}"
 echo "REL_TAG=${REL_TAG}"
 echo "REL_STRENGTH=${REL_STRENGTH}"
