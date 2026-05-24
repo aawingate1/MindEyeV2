@@ -1658,3 +1658,56 @@ Recommended next research questions:
 - Do all six `8708124` training tasks start on the scheduled/non-excluded nodes and complete within `04:30:00`?
 - Do the full rows preserve the smoke behavior: `reldrop0` realized rates exactly `0.0000/0.0000/0.0000` and nonzero rows realized rates close to assigned all/early/higher probabilities?
 - Once evaluator `8708125_[0-5]` writes CSVs, does either nonzero strength improve same-subject BrainRet by about `0.02` absolute without degrading CLIP, Inception, retrieval, EfficientNet/SwAV distances, visual cortex, or higher visual correlation?
+
+## Cycle 23 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 23 recovery/readout plan.
+- Telegram report is not due.
+- No code, reliability tensor, dropout strength, split, mask, initialization, evaluator setting, candidate pool, model name, or Slurm resource request was changed.
+
+Scheduler state recovered at `2026-05-24 15:19:22 EDT`:
+- Required training array `8708124_[0-5]` is still the first source of truth and remains `PENDING (Priority)`, elapsed `00:00:00`, exit `0:0`, no allocated node and no MaxRSS yet.
+- `8708124_0`: `cycle21_subj05_reldrop0_1sess_150ep`, pending, scheduled node `della-l04g16`, scheduled start `2026-05-24T15:46:51`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_0.out`, stderr `.err`.
+- `8708124_1`: `cycle21_subj05_reldrop_low_1sess_150ep`, pending, scheduled node `della-l04g12`, scheduled start `2026-05-24T15:47:28`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_1.out`, stderr `.err`.
+- `8708124_2`: `cycle21_subj05_reldrop_mid_1sess_150ep`, pending, scheduled node `della-i14g18`, scheduled start `2026-05-24T15:48:28`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_2.out`, stderr `.err`.
+- `8708124_3`: `cycle21_subj07_reldrop0_1sess_150ep`, pending, no scheduled node/start shown, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_3.out`, stderr `.err`.
+- `8708124_4`: `cycle21_subj07_reldrop_low_1sess_150ep`, pending, no scheduled node/start shown, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_4.out`, stderr `.err`.
+- `8708124_5`: `cycle21_subj07_reldrop_mid_1sess_150ep`, pending, no scheduled node/start shown, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c21_reldrop_s57_8708124_5.out`, stderr `.err`.
+- Training array settings remain as intended by the prior smoke gate: `gpu-short`, one A100, `64G`, `04:30:00`, workdir `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`, command `/src/cycle21_reldrop_train_s57.slurm`, `--exclude=della-i14g8,della-i14g19,della-i14g20`, and no requeue.
+- Dependent evaluator array `8708125_[0-5]` remains `PENDING (Dependency)`, dependency `afterok:8708124_*`, elapsed `00:00:00`, exit `0:0`, no node, no MaxRSS, time limit `04:00:00`, memory `64G`, command `/src/cycle21_reldrop_eval_s57.slurm`.
+- Scheduler/artifact observability remains partial from the container: `/scratch/gpfs/...` is not mounted locally (`/scratch` is absent), so compute-visible paths cannot be directly inspected until artifacts are mirrored or visible under `/src`. `squeue`, `sacct`, and `scontrol` are available and were used.
+
+Artifact state:
+- No full-row Slurm logs are visible yet under `/src/slurms` for `c21_reldrop_s57_8708124*` or `c21_reldrop_eval_s57_8708125*`, consistent with the jobs not having started.
+- None of the six required full-row checkpoints are visible at `/src/train_logs/<model_name>/last.pth`.
+- No enhanced reconstruction directories or tensors are visible under `/src/evals/<model_name>/` for the six required full rows.
+- No final CSVs exist at `/src/tables/<model_name>_all_enhancedrecons.csv`.
+- Therefore no Cycle 21 full-row final evaluator has run yet, and no row can yet be confirmed as using enhanced reconstructions.
+
+Reliability/dropout provenance:
+- Reliability tensors remain the planned unchanged files:
+  - `/src/reliability/subj05_trainrepeat_reliability.pt`
+  - `/src/reliability/subj07_trainrepeat_reliability.pt`
+- Voxel/ROI counts remain: subj05 `13039` total, early/higher `3661/9378`; subj07 `12682` total, early/higher `3251/9431`.
+- Assigned dropout probability summaries remain those established before launch:
+  - subj05 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`.
+  - subj05 `reldrop_low`: all mean `0.0625`, range `0.0200-0.1000`, early/higher mean `0.0570/0.0647`, reliability/probability corr `-1.000`.
+  - subj05 `reldrop_mid`: all mean `0.1144`, range `0.0400-0.1800`, early/higher mean `0.1047/0.1182`, reliability/probability corr about `-1.000`.
+  - subj07 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`.
+  - subj07 `reldrop_low`: all mean `0.0648`, range `0.0200-0.1000`, early/higher mean `0.0561/0.0678`, reliability/probability corr `-1.000`.
+  - subj07 `reldrop_mid`: all mean `0.1184`, range `0.0400-0.1800`, early/higher mean `0.1031/0.1236`, reliability/probability corr about `-1.000`.
+
+Metrics/readout status:
+- No Cycle 23 final training diagnostics, realized full-run dropout rates, refined metric CSVs, deltas versus same-subject `reldrop0`, or mechanism sensitivity diagnostics are available because the required training array remains pending.
+- The post-readout mechanism diagnostic was not run, per plan, because the six full checkpoints do not yet exist.
+- No recovery rerun was submitted. The exact pending training array is healthy scheduler-side and remains the valid path; duplicating it would risk conflicting rows.
+
+Conclusion:
+- Cycle 23 is scheduler-limited, not code-limited or artifact-failure-limited. The six required `reldrop` rows are still queued with the intended semantics and dependency chain intact.
+- The next valid action is to inspect `8708124_[0-5]` after allocation, parse the resulting train logs for final train/test diagnostics and realized all/early/higher drop rates, then let `8708125_[0-5]` run. If any checkpoint exists but its CSV is missing, rerun only the fixed evaluator path for that exact model name.
+
+Recommended next research questions:
+- Do the three scheduled subject 5 rows actually start on `della-l04g16`, `della-l04g12`, and `della-i14g18`, and do they complete within `04:30:00` without the prior low-headroom OOM pattern?
+- Do all six full rows reproduce the smoke behavior: `reldrop0` realized rates exactly `0.0000/0.0000/0.0000`, and nonzero rows realized rates close to assigned probabilities?
+- Once `8708125_[0-5]` writes final CSVs, does either nonzero `reldrop` strength improve same-subject BrainRet by about `0.02` absolute while preserving semantic retrieval, CLIP/Inception, distances, visual cortex, and higher visual correlation?
