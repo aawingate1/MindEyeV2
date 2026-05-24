@@ -1520,3 +1520,82 @@ Recommended next research questions:
 - Do not increase fixed centered scaling strength; `mid` already reaches the configured clipping bounds and worsens weak-subject mean BrainRet.
 - The next valid input-side candidate is reliability-informed training-only dropout or multiplicative noise using the same leakage-free tensors and unchanged evaluation-time inputs, with same-code no-dropout controls.
 - If pursuing subject 7 only, repeat subj07 `relgate0` and `relgate_low` first before treating the small `+0.0098` BrainRet movement as anything beyond noise.
+
+## Cycle 21 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the Cycle 21 reliability-uncertainty plan.
+- Telegram report is due; report-ready summary is appended below.
+- Did not use `/strategizing-chat.md` or researcher notes.
+
+Code/config changes:
+- Patched `/src/Train.py` with disabled-by-default `--reliability_mode=inverted_voxel_dropout`.
+- Added CLI flags `--reldrop_p_base` and `--reldrop_p_span`.
+- Preserved the existing `centered_scale` path for prior relgate rows; the new dropout path is separate and opt-in.
+- New dropout mode loads the leakage-free train-repeat reliability tensor, converts lower reliability to higher bounded uncertainty, and applies inverted voxel dropout only to training batches on device immediately before the ridge/model forward pass.
+- Validation/test fMRI remains unperturbed for `inverted_voxel_dropout`; reconstruction/evaluator inputs, targets, image latents, CLIP targets, blurry targets, captions, and saved beta data are not modified.
+- Added epoch-level logging for assigned probability summaries in `reliability_summary.json` and realized train drop/keep rates for all, early visual, and higher visual voxels in train logs.
+- Confirmed the frozen target-encoder `torch.no_grad()` and chunked SD-VAE target-encoding repairs remain present in `/src/Train.py`.
+
+New Slurm files:
+- `/src/cycle21_reldrop_smoke.slurm`: required 1-hour subject 7 smoke for `reldrop0` and `reldrop_low`, 3 epochs, batch 24, one A100, official multisubject initialization.
+- `/src/cycle21_reldrop_train_s57.slurm`: six full required rows for subjects 5/7 and `reldrop0/low/mid`, one-session 150 epochs.
+- `/src/cycle21_reldrop_eval_s57.slurm`: fixed evaluation path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/Train.py /src/recon_inference.py /src/enhanced_recon_inference.py /src/final_evaluations.py` passed.
+- `bash -n /src/cycle21_reldrop_smoke.slurm /src/cycle21_reldrop_train_s57.slurm /src/cycle21_reldrop_eval_s57.slurm` passed.
+
+Assigned dropout probability diagnostics:
+- subj05 `reldrop0`: all/early/higher mean `0.0000/0.0000/0.0000`, range `0.0000-0.0000`.
+- subj05 `reldrop_low`: all mean `0.0625`, range `0.0200-0.1000`, early/higher mean `0.0570/0.0647`, reliability/probability corr `-1.000`.
+- subj05 `reldrop_mid`: all mean `0.1144`, range `0.0400-0.1800`, early/higher mean `0.1047/0.1182`, reliability/probability corr about `-1.000`.
+- subj07 `reldrop0`: all/early/higher mean `0.0000/0.0000/0.0000`, range `0.0000-0.0000`.
+- subj07 `reldrop_low`: all mean `0.0648`, range `0.0200-0.1000`, early/higher mean `0.0561/0.0678`, reliability/probability corr `-1.000`.
+- subj07 `reldrop_mid`: all mean `0.1184`, range `0.0400-0.1800`, early/higher mean `0.1031/0.1236`, reliability/probability corr about `-1.000`.
+- Early/higher mean probability imbalance is under `2x` for both subjects and strengths, so no ROI-balanced normalization was introduced.
+- Voxel/ROI counts remain: subj05 `13039` total, early/higher `3661/9378`; subj07 `12682` total, early/higher `3251/9431`.
+
+Commands/jobs launched:
+- Submitted required smoke only: `sbatch /src/cycle21_reldrop_smoke.slurm`.
+- Smoke job: `8707727_[0-1]`.
+  - `8707727_0`: subj07 `reldrop0`, model `cycle21_smoke_subj07_reldrop0_1sess_3ep`, pending at last check.
+  - `8707727_1`: subj07 `reldrop_low`, model `cycle21_smoke_subj07_reldrop_low_1sess_3ep`, pending at last check.
+- Last scheduler check: `2026-05-24 14:43:27 EDT`; both smoke tasks were `PENDING`, elapsed `00:00`, with no node assigned yet.
+- Full six-row training was intentionally not submitted because `/plan.md` requires smoke to pass first.
+- Evaluation was not submitted because full checkpoints do not exist yet.
+
+Observed metrics/results:
+- No Cycle 21 training metrics, realized dropout rates, GPU memory, or final refined CSVs are available yet because the smoke had not started by the last scheduler check.
+- Required final CSV paths remain expected, not produced:
+  - `/src/tables/cycle21_subj05_reldrop0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj05_reldrop_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj05_reldrop_mid_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop_mid_1sess_150ep_all_enhancedrecons.csv`
+
+Conclusions:
+- Cycle 21 implementation is ready and statically validated.
+- The smoke gate is now queued. The next valid action is to inspect `8707727_[0-1]` logs after it runs, verify `reldrop0` no-effect behavior, stochastic realized dropout for `reldrop_low`, finite train/test losses, unperturbed validation/test behavior, and GPU memory, then submit `/src/cycle21_reldrop_train_s57.slurm` only if the smoke passes.
+
+Recommended next research questions:
+- Do the realized subj07 `reldrop_low` drop rates match assigned all/early/higher probabilities without fixed masks across batches?
+- Does `reldrop0` reproduce the same-code no-effect training diagnostics while still loading/logging reliability?
+- If the smoke passes, do the six full rows improve refined brain retrieval by about `0.02` absolute versus same-subject `reldrop0` without semantic or higher-visual regressions?
+
+Telegram-ready update:
+Cycle 21 implemented the planned training-only reliability dropout in `/src/Train.py` and queued the required 1-hour smoke. New mode is opt-in via `--reliability_mode=inverted_voxel_dropout`, applies inverted voxel dropout only to training batches immediately before the ridge forward, and leaves validation/test/reconstruction/evaluator fMRI unperturbed. Static probability checks match plan: low ranges `0.02-0.10`, mid ranges `0.04-0.18`; early/higher probability imbalance is below `2x` for subjects 5/7. Validation passed (`py_compile` and `bash -n`). Submitted smoke job `8707727_[0-1]` for subj07 `reldrop0` and `reldrop_low`; both were still pending at `2026-05-24 14:43 EDT`, so no train metrics, realized drop rates, or refined CSVs exist yet. Full six-row training has not been submitted because the plan requires smoke to pass first.
+
+Cycle 21 smoke/full-launch addendum:
+- Smoke `8707727_[0-1]` started after the first writeout and completed successfully on `della-l09g7`.
+- `8707727_0` subj07 `reldrop0`: `COMPLETED 0:0`, elapsed `00:05:40`, MaxRSS `21830856K`, logs `/src/slurms/c21_reldrop_smoke_8707727_0.out/.err`.
+- `8707727_1` subj07 `reldrop_low`: `COMPLETED 0:0`, elapsed `00:05:40`, MaxRSS `21876712K`, logs `/src/slurms/c21_reldrop_smoke_8707727_1.out/.err`.
+- Smoke final epoch diagnostics:
+  - `reldrop0`: test loss `12.3`, test blurry PixCorr `0.168`, test fwd/bwd `0.413/0.253`; train loss `11.4`, train blurry PixCorr `0.286`, train fwd/bwd `0.974/0.958`; realized train drop rates all/early/higher `0.0000/0.0000/0.0000`.
+  - `reldrop_low`: test loss `12.3`, test blurry PixCorr `0.167`, test fwd/bwd `0.403/0.257`; train loss `11.4`, train blurry PixCorr `0.284`, train fwd/bwd `0.976/0.957`; realized train drop rates all/early/higher `0.0646/0.0562/0.0675`.
+- Smoke pass/fail call: passed. `reldrop0` is a no-effect same-code control for dropout, `reldrop_low` realized stochastic nonzero train-only drops at the assigned all/early/higher rates, validation/test metrics remained finite, and GPU memory stayed below the prior OOM pattern.
+- Added `#SBATCH --chdir=/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` to Cycle 21 Slurm files after smoke to remove the harmless compute-side `/src` chdir warning.
+- Launched full required training: `sbatch /src/cycle21_reldrop_train_s57.slurm`, job `8708124_[0-5]`, pending at last check.
+- Launched dependent evaluator: `sbatch --dependency=afterok:8708124 /src/cycle21_reldrop_eval_s57.slurm`, job `8708125_[0-5]`, dependency-pending at last check. `scontrol` verified dependency `afterok:8708124_*` and workdir `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src`.
+- Updated Telegram-ready status: Smoke passed and full Cycle 21 is now queued. Full rows are `cycle21_subj05_reldrop0_1sess_150ep`, `cycle21_subj05_reldrop_low_1sess_150ep`, `cycle21_subj05_reldrop_mid_1sess_150ep`, `cycle21_subj07_reldrop0_1sess_150ep`, `cycle21_subj07_reldrop_low_1sess_150ep`, and `cycle21_subj07_reldrop_mid_1sess_150ep`; final refined CSVs are still pending training and dependent evaluation.

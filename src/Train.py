@@ -216,7 +216,7 @@ parser.add_argument(
     "--max_lr",type=float,default=3e-4,
 )
 parser.add_argument(
-    "--reliability_mode", type=str, default="none", choices=["none", "centered_scale"],
+    "--reliability_mode", type=str, default="none", choices=["none", "centered_scale", "inverted_voxel_dropout"],
     help="Reliability-aware voxel input mode. Defaults to none to preserve baseline behavior.",
 )
 parser.add_argument(
@@ -234,6 +234,14 @@ parser.add_argument(
 parser.add_argument(
     "--reliability_clip_max", type=float, default=1.25,
     help="Maximum centered reliability scale.",
+)
+parser.add_argument(
+    "--reldrop_p_base", type=float, default=0.0,
+    help="Base voxel dropout probability for --reliability_mode=inverted_voxel_dropout.",
+)
+parser.add_argument(
+    "--reldrop_p_span", type=float, default=0.0,
+    help="Additional uncertainty-scaled voxel dropout probability for --reliability_mode=inverted_voxel_dropout.",
 )
 parser.add_argument(
     "--adapter_prior_weight", type=float, default=0.0,
@@ -360,9 +368,32 @@ def load_reliability_tensor(path):
         raise ValueError(f"No 'reliability' tensor found in {path}")
     return reliability.float().flatten(), provenance, early_mask, higher_mask
 
+def _pearson_corr(x, y):
+    x = x.detach().flatten().float()
+    y = y.detach().flatten().float()
+    valid = torch.isfinite(x) & torch.isfinite(y)
+    x = x[valid]
+    y = y[valid]
+    if int(x.numel()) < 3:
+        return float("nan")
+    x = x - x.mean()
+    y = y - y.mean()
+    denom = torch.linalg.vector_norm(x) * torch.linalg.vector_norm(y)
+    if float(denom) == 0.0:
+        return float("nan")
+    return float((x * y).sum() / denom)
+
+def _masked_mean(values, mask):
+    if mask is None:
+        return None
+    mask = mask.bool().flatten()
+    if int(mask.numel()) != int(values.numel()) or not bool(mask.any()):
+        return None
+    return float(values[mask].mean())
+
 def build_reliability_input(num_voxels_value, mode, path, strength, clip_min, clip_max):
     if mode == "none":
-        return None, {
+        return {"mode": mode}, {
             "mode": mode,
             "source": "disabled",
             "path": path,
@@ -372,7 +403,7 @@ def build_reliability_input(num_voxels_value, mode, path, strength, clip_min, cl
             "scale_min": 1.0,
             "scale_max": 1.0,
         }
-    if mode != "centered_scale":
+    if mode not in ("centered_scale", "inverted_voxel_dropout"):
         raise ValueError(f"Unknown reliability_mode: {mode}")
 
     reliability, provenance, early_mask, higher_mask = load_reliability_tensor(path)
@@ -381,15 +412,8 @@ def build_reliability_input(num_voxels_value, mode, path, strength, clip_min, cl
             f"Reliability tensor length {int(reliability.numel())} does not match voxel count {int(num_voxels_value)}"
         )
     reliability = torch.nan_to_num(reliability, nan=0.0, posinf=0.0, neginf=0.0)
-    if float(strength) == 0.0:
-        scale = torch.ones_like(reliability)
-    else:
-        rel_std = torch.clamp(reliability.std(), min=1e-6)
-        centered = (reliability - reliability.mean()) / rel_std
-        scale = 1.0 + float(strength) * centered
-        scale = torch.clamp(scale, float(clip_min), float(clip_max))
-        scale = scale / torch.clamp(scale.mean(), min=1e-6)
-    transform = scale.to(data_type).reshape(1, 1, -1)
+    early_mask = early_mask.bool().flatten() if early_mask is not None else None
+    higher_mask = higher_mask.bool().flatten() if higher_mask is not None else None
 
     summary = {
         "mode": mode,
@@ -401,29 +425,95 @@ def build_reliability_input(num_voxels_value, mode, path, strength, clip_min, cl
         "num_voxels": int(reliability.numel()),
         "reliability_mean": float(reliability.mean()),
         "reliability_std": float(reliability.std()),
-        "scale_mean": float(scale.mean()),
-        "scale_std": float(scale.std()),
-        "scale_min": float(scale.min()),
-        "scale_max": float(scale.max()),
         "provenance": provenance,
     }
-    if early_mask is not None:
-        early_mask = early_mask.bool().flatten()
-        if int(early_mask.numel()) == int(reliability.numel()) and bool(early_mask.any()):
-            summary["early_scale_mean"] = float(scale[early_mask].mean())
-            summary["early_reliability_mean"] = float(reliability[early_mask].mean())
-    if higher_mask is not None:
-        higher_mask = higher_mask.bool().flatten()
-        if int(higher_mask.numel()) == int(reliability.numel()) and bool(higher_mask.any()):
-            summary["higher_scale_mean"] = float(scale[higher_mask].mean())
-            summary["higher_reliability_mean"] = float(reliability[higher_mask].mean())
-    return transform, summary
+    if _masked_mean(reliability, early_mask) is not None:
+        summary["early_reliability_mean"] = _masked_mean(reliability, early_mask)
+    if _masked_mean(reliability, higher_mask) is not None:
+        summary["higher_reliability_mean"] = _masked_mean(reliability, higher_mask)
+
+    if mode == "centered_scale":
+        if float(strength) == 0.0:
+            scale = torch.ones_like(reliability)
+        else:
+            rel_std = torch.clamp(reliability.std(), min=1e-6)
+            centered = (reliability - reliability.mean()) / rel_std
+            scale = 1.0 + float(strength) * centered
+            scale = torch.clamp(scale, float(clip_min), float(clip_max))
+            scale = scale / torch.clamp(scale.mean(), min=1e-6)
+        transform = scale.to(data_type).reshape(1, 1, -1)
+        summary.update({
+            "scale_mean": float(scale.mean()),
+            "scale_std": float(scale.std()),
+            "scale_min": float(scale.min()),
+            "scale_max": float(scale.max()),
+        })
+        if _masked_mean(scale, early_mask) is not None:
+            summary["early_scale_mean"] = _masked_mean(scale, early_mask)
+        if _masked_mean(scale, higher_mask) is not None:
+            summary["higher_scale_mean"] = _masked_mean(scale, higher_mask)
+        return {"mode": mode, "transform": transform}, summary
+
+    rel_min = reliability.min()
+    rel_range = torch.clamp(reliability.max() - rel_min, min=1e-6)
+    uncertainty = 1.0 - ((reliability - rel_min) / rel_range)
+    probability = torch.clamp(float(reldrop_p_base) + float(reldrop_p_span) * uncertainty, 0.0, 0.95)
+    transform = probability.to(data_type).reshape(1, 1, -1)
+    summary.update({
+        "dropout_p_base": float(reldrop_p_base),
+        "dropout_p_span": float(reldrop_p_span),
+        "dropout_prob_mean": float(probability.mean()),
+        "dropout_prob_std": float(probability.std()),
+        "dropout_prob_min": float(probability.min()),
+        "dropout_prob_max": float(probability.max()),
+        "dropout_prob_reliability_corr": _pearson_corr(reliability, probability),
+    })
+    if _masked_mean(probability, early_mask) is not None:
+        summary["early_dropout_prob_mean"] = _masked_mean(probability, early_mask)
+        summary["early_dropout_prob_min"] = float(probability[early_mask].min())
+        summary["early_dropout_prob_max"] = float(probability[early_mask].max())
+    if _masked_mean(probability, higher_mask) is not None:
+        summary["higher_dropout_prob_mean"] = _masked_mean(probability, higher_mask)
+        summary["higher_dropout_prob_min"] = float(probability[higher_mask].min())
+        summary["higher_dropout_prob_max"] = float(probability[higher_mask].max())
+    return {
+        "mode": mode,
+        "dropout_probability": transform,
+        "early_mask": early_mask,
+        "higher_mask": higher_mask,
+    }, summary
 
 def apply_reliability(voxel, subj_key):
-    transform = reliability_inputs.get(subj_key)
-    if transform is None:
+    config = reliability_inputs.get(subj_key)
+    if config is None or config.get("mode") != "centered_scale":
         return voxel
+    transform = config.get("transform")
     return voxel * transform.to(voxel.device, dtype=voxel.dtype)
+
+def apply_reliability_training_perturbation(voxel, subj_key):
+    config = reliability_inputs.get(subj_key)
+    if config is None or config.get("mode") != "inverted_voxel_dropout":
+        return voxel, None
+    prob = config["dropout_probability"].to(voxel.device, dtype=voxel.dtype)
+    keep_prob = torch.clamp(1.0 - prob, min=1e-6)
+    keep_mask = (torch.rand_like(voxel) < keep_prob).to(voxel.dtype)
+    perturbed = voxel * keep_mask / keep_prob
+    dropped = 1.0 - keep_mask.detach().float()
+    stats = {
+        "drop_rate_all": float(dropped.mean().item()),
+        "keep_rate_all": float(keep_mask.detach().float().mean().item()),
+    }
+    for region in ("early", "higher"):
+        region_mask = config.get(f"{region}_mask")
+        if region_mask is None:
+            continue
+        region_mask = region_mask.to(voxel.device).bool().flatten()
+        if int(region_mask.numel()) == int(voxel.shape[-1]) and bool(region_mask.any()):
+            region_dropped = dropped[..., region_mask]
+            region_keep = keep_mask.detach().float()[..., region_mask]
+            stats[f"drop_rate_{region}"] = float(region_dropped.mean().item())
+            stats[f"keep_rate_{region}"] = float(region_keep.mean().item())
+    return perturbed, stats
 
 def encode_autoenc_latents(autoenc, image_batch, chunk_size=8):
     latents = []
@@ -832,7 +922,9 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "use_image_aug": use_image_aug,
       "max_lr": max_lr,
       "reliability_mode": reliability_mode,
-      "reliability_topk": reliability_topk,
+      "reliability_strength": reliability_strength,
+      "reldrop_p_base": reldrop_p_base,
+      "reldrop_p_span": reldrop_p_span,
       "adapter_prior_weight": adapter_prior_weight,
       "adapter_prior_type": adapter_prior_type,
       "proj_reg_lambda": proj_reg_lambda,
@@ -972,6 +1064,8 @@ for epoch in progress_bar:
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
+    reldrop_stats_total = {}
+    reldrop_stats_steps = 0
 
     blurry_pixcorr = 0.
     test_blurry_pixcorr = 0. # needs >.456 to beat low-level subj01 results in mindeye v1
@@ -1036,6 +1130,13 @@ for epoch in progress_bar:
                 betas = torch.cat(betas_list, dim=0)
                 select_list = [select_iters[f"subj0{s}_iter{train_i}"].detach().to(device) for s in subj_list]
                 select = torch.cat(select_list, dim=0)
+
+            for si, s in enumerate(subj_list):
+                voxel_list[si], reldrop_stats = apply_reliability_training_perturbation(voxel_list[si], f"subj0{s}")
+                if reldrop_stats is not None:
+                    reldrop_stats_steps += 1
+                    for k, v in reldrop_stats.items():
+                        reldrop_stats_total[k] = reldrop_stats_total.get(k, 0.0) + v
 
             voxel_ridge_list = [model_for_submodules.ridge(voxel_list[si],si) for si,s in enumerate(subj_list)]
             voxel_ridge = torch.cat(voxel_ridge_list, dim=0)
@@ -1316,6 +1417,8 @@ for epoch in progress_bar:
                 "test/rel_loss": test_rel_loss_total / max(1, test_rel_logged_steps),
                 "test/rel_sim_corr": test_rel_sim_corr_total / max(1, test_rel_logged_steps),
                 }
+            for k, v in reldrop_stats_total.items():
+                logs[f"train/reldrop_{k}"] = v / max(1, reldrop_stats_steps)
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):
