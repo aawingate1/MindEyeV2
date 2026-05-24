@@ -1425,3 +1425,98 @@ Recommended next research questions:
 - Do the Cycle 19 reruns avoid the epoch-0 backward OOM on non-excluded nodes?
 - If all six checkpoints complete, does evaluator `8673688_[0-5]` produce the six required refined CSVs through the fixed path?
 - Once CSVs exist, do `relgate_low` or `relgate_mid` improve refined brain retrieval by about `0.02` absolute versus same-subject `relgate0` without semantic or distance regressions?
+
+## Cycle 20 - 2026-05-24
+
+Plan executed:
+- Read `/plan.md` and executed only the centered reliability-gate recovery/readout plan.
+- Telegram report is not due.
+- No new training method, evaluator setting, reliability tensor, split, mask, checkpoint initialization, retrieval protocol, or architecture change was introduced.
+
+Scheduler/artifact state:
+- No Cycle 20 training or reconstruction reruns were needed. The Cycle 19 recovery and dependent evaluator completed before this readout.
+- Required training rows:
+  - `8671676_1` subj05 `relgate_low`: `COMPLETED 0:0`, elapsed `02:10:42`, MaxRSS `22318580K`, node `della-l03g4`, logs `/src/slurms/c16_relgate_s57_8671676_1.out/.err`.
+  - `8671676_5` subj07 `relgate_mid`: `COMPLETED 0:0`, elapsed `02:11:58`, MaxRSS `22962676K`, node `della-l02g12`, logs `/src/slurms/c16_relgate_s57_8671676_5.out/.err`.
+  - `8672355_0` subj05 `relgate0`: `COMPLETED 0:0`, elapsed `02:04:35`, MaxRSS `22975100K`, node `della-l05g2`, logs `/src/slurms/c18_relgate_recover_s57_8672355_0.out/.err`.
+  - `8673678_2` subj05 `relgate_mid`: `COMPLETED 0:0`, elapsed `02:05:26`, MaxRSS `22967832K`, node `della-l04g1`, logs `/src/slurms/c19_relgate_recover_s57_8673678_2.out/.err`.
+  - `8673678_3` subj07 `relgate0`: `COMPLETED 0:0`, elapsed `02:07:10`, MaxRSS `21595948K`, node `della-l03g16`, logs `/src/slurms/c19_relgate_recover_s57_8673678_3.out/.err`.
+  - `8673678_4` subj07 `relgate_low`: `COMPLETED 0:0`, elapsed `02:10:49`, MaxRSS `22802700K`, node `della-l02g12`, logs `/src/slurms/c19_relgate_recover_s57_8673678_4.out/.err`.
+- Historical failed attempts remain classified as operational epoch-0 CUDA memory failures on low-headroom `della-i14g*` nodes, recovered by exact-grid reruns with node exclusions and the Cycle 17 chunked frozen SD-VAE target-encoding repair.
+- Dependent evaluator `8673688_[0-5]` completed all six rows through `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`:
+  - tasks `0-5`: all `COMPLETED 0:0`, elapsed about `02:23:55-02:25:29`, MaxRSS about `47074996K-49086628K`, nodes `della-l05g7`, `della-l05g5`, and `della-l05g4`.
+  - Logs: `/src/slurms/c16_relgate_eval_s57_8673688_{0..5}.out/.err`.
+
+Final artifact paths:
+- Final CSVs are present:
+  - `/src/tables/cycle16_subj05_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj05_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle16_subj07_relgate_mid_1sess_150ep_all_enhancedrecons.csv`
+- Enhanced recon tensors and evaluator intermediates are present under `/src/evals/cycle16_subj0{5,7}_relgate{0,_low,_mid}_1sess_150ep/`.
+- Compute-visible checkpoint paths used by the evaluator and diagnostic are `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last.pth`. Login-side `/scratch` remains invisible, so checkpoint file inspection from the container is limited; compute jobs successfully loaded them.
+
+Reliability/scale provenance:
+- Reliability tensors:
+  - `/src/reliability/subj05_trainrepeat_reliability.pt`
+  - `/src/reliability/subj07_trainrepeat_reliability.pt`
+- Provenance remains leakage-free: one-session training repeats only, with old-test and `new_test` overlaps excluded.
+- Voxel and ROI counts verified in logs and diagnostic: subj05 `13039`, early/higher `3661/9378`; subj07 `12682`, early/higher `3251/9431`.
+- `relgate0` rows are exact no-effect controls: scale mean/min/max `1.000/1.000/1.000`, early/higher `1.000/1.000`.
+- Nonzero scale summaries:
+  - subj05 `low alpha=0.05`: mean/min/max `1.000/0.855/1.164`, early/higher `1.021/0.992`.
+  - subj05 `mid alpha=0.10`: mean/min/max `1.000/0.750/1.250`, early/higher `1.043/0.983`.
+  - subj07 `low alpha=0.05`: mean/min/max `1.000/0.864/1.173`, early/higher `1.034/0.988`.
+  - subj07 `mid alpha=0.10`: mean/min/max `1.000/0.750/1.251`, early/higher `1.066/0.977`.
+
+Final refined metrics:
+
+| subj | row | PixCorr | SSIM | Alex2 | Alex5 | Incept | CLIP | EffNet | SwAV | ImgRet | BrainRet | VC | V1 | V2 | V3 | V4 | Higher |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 05 | relgate0 | 0.1927 | 0.4069 | 0.8468 | 0.9161 | 0.8562 | 0.8405 | 0.7681 | 0.4312 | 0.6488 | 0.5528 | 0.4164 | 0.3519 | 0.3560 | 0.3410 | 0.3151 | 0.4236 |
+| 05 | low | 0.2012 | 0.4111 | 0.8485 | 0.9231 | 0.8600 | 0.8397 | 0.7674 | 0.4332 | 0.6421 | 0.5246 | 0.4101 | 0.3492 | 0.3549 | 0.3377 | 0.3114 | 0.4176 |
+| 05 | mid | 0.1885 | 0.4087 | 0.8458 | 0.9200 | 0.8581 | 0.8451 | 0.7654 | 0.4339 | 0.6367 | 0.5382 | 0.4132 | 0.3438 | 0.3530 | 0.3376 | 0.3122 | 0.4224 |
+| 07 | relgate0 | 0.1943 | 0.4047 | 0.8290 | 0.8940 | 0.7851 | 0.7710 | 0.8282 | 0.4779 | 0.6806 | 0.5420 | 0.3213 | 0.3217 | 0.3250 | 0.3160 | 0.2813 | 0.3070 |
+| 07 | low | 0.1997 | 0.4012 | 0.8276 | 0.8875 | 0.7949 | 0.7844 | 0.8220 | 0.4741 | 0.6949 | 0.5518 | 0.3184 | 0.3153 | 0.3182 | 0.3109 | 0.2770 | 0.3038 |
+| 07 | mid | 0.2009 | 0.4036 | 0.8175 | 0.8814 | 0.7868 | 0.7791 | 0.8273 | 0.4733 | 0.6724 | 0.5191 | 0.3130 | 0.3079 | 0.3107 | 0.3029 | 0.2718 | 0.2984 |
+
+Deltas versus same-subject `relgate0`:
+- subj05 `low`: BrainRet `-0.0282`; CLIP `-0.0008`; Inception `+0.0038`; ImgRet `-0.0067`; EffNet `-0.0007` lower/better; SwAV `+0.0020` higher/worse; VC `-0.0062`; Higher `-0.0060`.
+- subj05 `mid`: BrainRet `-0.0146`; CLIP `+0.0045`; Inception `+0.0019`; ImgRet `-0.0121`; EffNet `-0.0027` lower/better; SwAV `+0.0027` higher/worse; VC `-0.0032`; Higher `-0.0013`.
+- subj07 `low`: BrainRet `+0.0098`; CLIP `+0.0134`; Inception `+0.0098`; ImgRet `+0.0143`; EffNet `-0.0062` lower/better; SwAV `-0.0038` lower/better; VC `-0.0029`; Higher `-0.0032`.
+- subj07 `mid`: BrainRet `-0.0229`; CLIP `+0.0081`; Inception `+0.0017`; ImgRet `-0.0081`; EffNet `-0.0010` lower/better; SwAV `-0.0046` lower/better; VC `-0.0083`; Higher `-0.0086`.
+- Weak-subject mean BrainRet: `relgate0 0.5474`, `low 0.5382`, `mid 0.5287`.
+
+Final training diagnostics from epoch 150:
+- subj05 `relgate0`: test loss `14.3`, blurry PixCorr `0.193`, test fwd/bwd `0.670/0.583`; train loss `5.88`, train blurry PixCorr `0.801`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+- subj05 `low`: test loss `14.5`, blurry PixCorr `0.189`, test fwd/bwd `0.673/0.540`; train loss `5.87`, train blurry PixCorr `0.800`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+- subj05 `mid`: test loss `14.4`, blurry PixCorr `0.180`, test fwd/bwd `0.663/0.563`; train loss `5.87`, train blurry PixCorr `0.800`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+- subj07 `relgate0`: test loss `14.2`, blurry PixCorr `0.226`, test fwd/bwd `0.730/0.563`; train loss `5.95`, train blurry PixCorr `0.788`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+- subj07 `low`: test loss `14.1`, blurry PixCorr `0.231`, test fwd/bwd `0.767/0.583`; train loss `5.95`, train blurry PixCorr `0.789`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+- subj07 `mid`: test loss `14.2`, blurry PixCorr `0.243`, test fwd/bwd `0.743/0.567`; train loss `5.94`, train blurry PixCorr `0.788`, train fwd/bwd `1.000/1.000`, train/test `rel_loss=0`, `rel_sim_corr=0`.
+
+Post-hoc mechanism diagnostic:
+- Added `/src/cycle20_sensitivity_diagnostic.py` and `/src/cycle20_sensitivity_diagnostic.slurm`.
+- Submitted `sbatch /src/cycle20_sensitivity_diagnostic.slurm`, job `8707430`; `COMPLETED 0:0`, elapsed `00:01:24`, MaxRSS `35068612K`, node `della-i13n25`.
+- Output: `/src/tables/cycle20_relgate_sensitivity.csv`.
+- Diagnostic uses `ridge.linears.0.weight.abs().mean(dim=0)` as learned voxel input sensitivity and Spearman correlation with the leakage-free reliability tensor.
+- Spearman reliability/sensitivity summary:
+  - subj05 `relgate0`: all `-0.041`, early `+0.270`, higher `-0.177`.
+  - subj05 `low`: all `-0.059`, early `+0.243`, higher `-0.189`.
+  - subj05 `mid`: all `-0.077`, early `+0.220`, higher `-0.199`.
+  - subj07 `relgate0`: all `+0.189`, early `+0.457`, higher `+0.031`.
+  - subj07 `low`: all `+0.175`, early `+0.435`, higher `+0.021`.
+  - subj07 `mid`: all `+0.150`, early `+0.394`, higher `+0.006`.
+- Interpretation: sensitivity is much more aligned with reliability in early visual cortex than higher visual cortex, especially for subj07; stronger centered scaling reduces, not increases, the reliability/sensitivity correlation while higher-visual refined correlations degrade. This does not support a semantic reliability-gate mechanism.
+
+Scientific decision:
+- Operational success criteria are satisfied: all six required centered-gate rows have final refined CSVs, `relgate0` is verified as same-code no-effect scaling, and deltas versus same-subject controls are recorded.
+- Scientific success criteria are not met. No nonzero gate improves refined brain retrieval by about `0.02` absolute. Subject 5 is harmful for both strengths. Subject 7 `low` has a small BrainRet gain of `+0.0098` with slight VC/Higher drops and does not meet the decision threshold; subject 7 `mid` is harmful.
+- Centered deterministic reliability scaling is therefore classified as neutral-to-harmful for weak subjects 5/7, not a MindEyeV2 improvement.
+
+Recommended next research questions:
+- Do not increase fixed centered scaling strength; `mid` already reaches the configured clipping bounds and worsens weak-subject mean BrainRet.
+- The next valid input-side candidate is reliability-informed training-only dropout or multiplicative noise using the same leakage-free tensors and unchanged evaluation-time inputs, with same-code no-dropout controls.
+- If pursuing subject 7 only, repeat subj07 `relgate0` and `relgate_low` first before treating the small `+0.0098` BrainRet movement as anything beyond noise.
