@@ -1864,3 +1864,83 @@ Recommended next research questions:
 - Did `8708125_[0-5]` finish within `04:00:00` and write all six enhanced recon tensors plus final CSVs?
 - Once CSVs exist, do `reldrop_low` or `reldrop_mid` improve same-subject refined BrainRet by about `+0.02` for subjects 5 and 7 without semantic or higher-visual regressions?
 - After CSV completion, does the sensitivity diagnostic show reliability dropout shifting learned sensitivity in a way that aligns with BrainRet and higher-visual outcomes?
+
+## Cycle 27 - 2026-05-25
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- No mechanism, dropout strength, generator/refiner, evaluator setting, row name, split, mask, initialization, batch size, hidden dim, epoch count, blurry branch, diffusion prior, or retrieval candidate pool was changed.
+
+Code/config changes:
+- Added `/src/cycle27_reldrop_sensitivity.py` and `/src/cycle27_reldrop_sensitivity.slurm` only for the post-CSV sensitivity diagnostic required by the plan.
+- Corrected the diagnostic Spearman helper to handle tied and constant vectors; `reldrop0` assigned dropout probability is constant zero, so its probability/sensitivity Spearman is `nan` rather than an arbitrary tied-rank value.
+
+Evaluator scheduler state for `8708125_[0-5]`:
+- `8708125_0` `cycle21_subj05_reldrop0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l05g1`, elapsed `02:25:01`, MaxRSS `49548972K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_0.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_0.err`.
+- `8708125_1` `cycle21_subj05_reldrop_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-i14g4`, elapsed `02:26:34`, MaxRSS `49489324K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_1.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_1.err`.
+- `8708125_2` `cycle21_subj05_reldrop_mid_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-i14g6`, elapsed `02:24:26`, MaxRSS `49440632K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_2.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_2.err`.
+- `8708125_3` `cycle21_subj07_reldrop0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l04g6`, elapsed `02:24:14`, MaxRSS `49487324K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_3.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_3.err`.
+- `8708125_4` `cycle21_subj07_reldrop_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-i14g8`, elapsed `02:24:39`, MaxRSS `49399368K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_4.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_4.err`.
+- `8708125_5` `cycle21_subj07_reldrop_mid_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l04g8`, elapsed `02:22:32`, MaxRSS `49576608K`, stdout `/src/slurms/c21_reldrop_eval_s57_8708125_5.out`, stderr `/src/slurms/c21_reldrop_eval_s57_8708125_5.err`.
+- `squeue` returned `slurm_load_jobs error: Invalid job id specified` after all tasks left the queue; `sacct` remained available and gave the completed states above.
+
+Artifact state:
+- Checkpoints are compute-visible at `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last.pth`; local `/src/train_logs/cycle21_*` checkpoint paths remain absent because the current container does not mount the same `/scratch/gpfs` tree. The sensitivity job loaded all six compute-visible checkpoints successfully.
+- Enhanced tensors exist and are 751M each:
+  - `/src/evals/cycle21_subj05_reldrop0_1sess_150ep/cycle21_subj05_reldrop0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle21_subj05_reldrop_low_1sess_150ep/cycle21_subj05_reldrop_low_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle21_subj05_reldrop_mid_1sess_150ep/cycle21_subj05_reldrop_mid_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle21_subj07_reldrop0_1sess_150ep/cycle21_subj07_reldrop0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle21_subj07_reldrop_low_1sess_150ep/cycle21_subj07_reldrop_low_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle21_subj07_reldrop_mid_1sess_150ep/cycle21_subj07_reldrop_mid_1sess_150ep_all_enhancedrecons.pt`
+- Final CSVs exist:
+  - `/src/tables/cycle21_subj05_reldrop0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj05_reldrop_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj05_reldrop_mid_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle21_subj07_reldrop_mid_1sess_150ep_all_enhancedrecons.csv`
+- The evaluator logs confirm `final_evaluations.py` consumed `evals/<model_name>/<model_name>_all_enhancedrecons.pt` for every row.
+
+Recovery/rerun commands launched:
+- No evaluator recovery reruns were submitted. The original dependent evaluator array completed cleanly.
+- Sensitivity diagnostic commands:
+  - `sbatch /src/cycle27_reldrop_sensitivity.slurm` -> job `8727693`, completed but superseded after fixing tied-rank handling.
+  - `sbatch /src/cycle27_reldrop_sensitivity.slurm` -> job `8727737`, `COMPLETED`, exit `0:0`, node `della-i13n25`, elapsed `00:01:31`, MaxRSS `34946372K`, output `/src/tables/cycle27_reldrop_sensitivity.csv`.
+
+Full refined metric table:
+
+| subject | row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | reldrop0 | 0.194953 | 0.409673 | 0.839638 | 0.917622 | 0.865263 | 0.843651 | 0.768107 | 0.432059 | 0.664222 | 0.563556 | 0.410970 | 0.341505 | 0.349198 | 0.333538 | 0.313308 | 0.420221 |
+| subj05 | reldrop_low | 0.193842 | 0.404299 | 0.843798 | 0.916389 | 0.856537 | 0.845423 | 0.768270 | 0.432230 | 0.649556 | 0.556111 | 0.416306 | 0.353121 | 0.355846 | 0.335339 | 0.315220 | 0.423606 |
+| subj05 | reldrop_mid | 0.189794 | 0.410379 | 0.837471 | 0.915836 | 0.858889 | 0.848361 | 0.765696 | 0.433695 | 0.660556 | 0.563889 | 0.412196 | 0.340201 | 0.346989 | 0.331149 | 0.313066 | 0.422663 |
+| subj07 | reldrop0 | 0.192812 | 0.402312 | 0.825233 | 0.884783 | 0.779239 | 0.781335 | 0.835155 | 0.478052 | 0.685000 | 0.535333 | 0.317103 | 0.320393 | 0.323790 | 0.313454 | 0.276887 | 0.301993 |
+| subj07 | reldrop_low | 0.185776 | 0.404134 | 0.824459 | 0.880209 | 0.778906 | 0.783524 | 0.829921 | 0.477394 | 0.664778 | 0.557222 | 0.316120 | 0.316478 | 0.319120 | 0.313092 | 0.280742 | 0.301013 |
+| subj07 | reldrop_mid | 0.187893 | 0.414382 | 0.817423 | 0.877122 | 0.782041 | 0.772345 | 0.836533 | 0.482801 | 0.686556 | 0.546222 | 0.312270 | 0.315216 | 0.318102 | 0.313352 | 0.274388 | 0.298637 |
+
+Same-subject deltas versus `reldrop0`:
+- subj05 `reldrop_low`: PixCorr `-0.001111`, SSIM `-0.005374`, AlexNet-2 `+0.004160`, AlexNet-5 `-0.001232`, Inception `-0.008727`, CLIP `+0.001773`, EffNet dist `+0.000162`, SwAV dist `+0.000171`, ImageRet `-0.014667`, BrainRet `-0.007444`, VC `+0.005336`, V1 `+0.011615`, V2 `+0.006647`, V3 `+0.001801`, V4 `+0.001912`, HigherVis `+0.003385`.
+- subj05 `reldrop_mid`: PixCorr `-0.005159`, SSIM `+0.000706`, AlexNet-2 `-0.002166`, AlexNet-5 `-0.001786`, Inception `-0.006374`, CLIP `+0.004711`, EffNet dist `-0.002412`, SwAV dist `+0.001636`, ImageRet `-0.003667`, BrainRet `+0.000333`, VC `+0.001226`, V1 `-0.001305`, V2 `-0.002209`, V3 `-0.002389`, V4 `-0.000242`, HigherVis `+0.002442`.
+- subj07 `reldrop_low`: PixCorr `-0.007037`, SSIM `+0.001822`, AlexNet-2 `-0.000774`, AlexNet-5 `-0.004574`, Inception `-0.000333`, CLIP `+0.002188`, EffNet dist `-0.005233`, SwAV dist `-0.000657`, ImageRet `-0.020222`, BrainRet `+0.021889`, VC `-0.000983`, V1 `-0.003915`, V2 `-0.004669`, V3 `-0.000362`, V4 `+0.003855`, HigherVis `-0.000980`.
+- subj07 `reldrop_mid`: PixCorr `-0.004919`, SSIM `+0.012070`, AlexNet-2 `-0.007810`, AlexNet-5 `-0.007661`, Inception `+0.002802`, CLIP `-0.008990`, EffNet dist `+0.001379`, SwAV dist `+0.004749`, ImageRet `+0.001556`, BrainRet `+0.010889`, VC `-0.004833`, V1 `-0.005177`, V2 `-0.005687`, V3 `-0.000102`, V4 `-0.002499`, HigherVis `-0.003355`.
+
+Sensitivity diagnostic:
+- Results saved to `/src/tables/cycle27_reldrop_sensitivity.csv`.
+- subj05 reliability/sensitivity Spearman:
+  - `reldrop0`: all `-0.0338`, early `+0.2857`, higher `-0.1753`; dropout-probability/sensitivity `nan/nan/nan` because probability is constant zero.
+  - `reldrop_low`: all `-0.0294`, early `+0.2841`, higher `-0.1678`; dropout-probability/sensitivity all `+0.0294`, early `-0.2841`, higher `+0.1678`.
+  - `reldrop_mid`: all `-0.0089`, early `+0.2973`, higher `-0.1475`; dropout-probability/sensitivity all `+0.0089`, early `-0.2973`, higher `+0.1475`.
+- subj07 reliability/sensitivity Spearman:
+  - `reldrop0`: all `+0.1893`, early `+0.4554`, higher `+0.0314`; dropout-probability/sensitivity `nan/nan/nan` because probability is constant zero.
+  - `reldrop_low`: all `+0.1965`, early `+0.4667`, higher `+0.0347`; dropout-probability/sensitivity all `-0.1965`, early `-0.4667`, higher `-0.0347`.
+  - `reldrop_mid`: all `+0.2090`, early `+0.4771`, higher `+0.0445`; dropout-probability/sensitivity all `-0.2090`, early `-0.4771`, higher `-0.0445`.
+- Interpretation: dropout does not create a consistent useful sensitivity shift that matches protected semantic gains. Subject 5 shows no BrainRet gain despite small higher-visual correlation increases. Subject 7 `reldrop_low` gains BrainRet but loses image retrieval by `-0.0202`, has lower PixCorr, and is not replicated in subject 5.
+
+Decision:
+- Reliability dropout is closed as neutral/harmful for this MindEyeV2 one-session weak-subject setting.
+- It does not satisfy the plan's success rule. Subject 5 has no nonzero BrainRet improvement; subject 7 `reldrop_low` reaches `+0.0219` BrainRet but fails the preservation requirement because image retrieval materially worsens and the effect is not credible subject-wise across both weak subjects. Subject 7 `reldrop_mid` is only `+0.0109` BrainRet with CLIP, distances, VC, and higher-visual degradation.
+- Per the plan, do not try stronger centered scaling, hard reliability pruning, broader dropout/noise grids, ROI-balanced evaluation-time scaling, generator/refiner edits, caption/VLM correction, temporal decoding, CLIP-layer fusion, broad ROI routing, cross-subject routers, or MoE architectures as the next step.
+
+Recommended next research questions:
+- If continuing after dropout closure, the defensible fallback is one small subject-functional-alignment adapter with same-code `adapter0` control and one conservative trainable setting on subjects 5 and 7, using the unchanged one-session/evaluator protocol and the same semantic-protected success rule.
