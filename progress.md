@@ -1810,3 +1810,57 @@ Recommended next research questions:
 - Do the scheduled subject 5 tasks start at the newly projected evening times and complete within `04:30:00`?
 - Once training starts, do full-run realized dropout rates match the smoke behavior and assigned all/early/higher probabilities?
 - If the evaluator dependency runs, do all six final CSVs appear at the required paths and show any same-subject BrainRet gain of about `+0.02` without semantic or higher-visual regression?
+
+## Cycle 26 - 2026-05-25
+
+Plan source: read and executed `/plan.md` only. Telegram report is not due.
+
+Code/config changes:
+- None. This was a recovery/readout cycle for the exact Cycle 21 reliability-dropout rows; no mechanism, grid, evaluator, generator/refiner, or row-name changes were made.
+
+Scheduler and artifact state:
+- Training array `8708124_[0-5]` completed successfully for all six required rows. `sacct` showed `COMPLETED`, exit `0:0`.
+  - `8708124_0` `cycle21_subj05_reldrop0_1sess_150ep`: elapsed `02:08:23`, node `della-l04g5`, MaxRSS `22974988K`, logs `/src/slurms/c21_reldrop_s57_8708124_0.out/.err`.
+  - `8708124_1` `cycle21_subj05_reldrop_low_1sess_150ep`: elapsed `02:08:22`, node `della-l03g1`, MaxRSS `22973724K`, logs `/src/slurms/c21_reldrop_s57_8708124_1.out/.err`.
+  - `8708124_2` `cycle21_subj05_reldrop_mid_1sess_150ep`: elapsed `02:07:39`, node `della-l04g12`, MaxRSS `21953240K`, logs `/src/slurms/c21_reldrop_s57_8708124_2.out/.err`.
+  - `8708124_3` `cycle21_subj07_reldrop0_1sess_150ep`: elapsed `02:07:36`, node `della-l02g6`, MaxRSS `22958540K`, logs `/src/slurms/c21_reldrop_s57_8708124_3.out/.err`.
+  - `8708124_4` `cycle21_subj07_reldrop_low_1sess_150ep`: elapsed `02:04:29`, node `della-l05g7`, MaxRSS `22947608K`, logs `/src/slurms/c21_reldrop_s57_8708124_4.out/.err`.
+  - `8708124_5` `cycle21_subj07_reldrop_mid_1sess_150ep`: elapsed `02:07:52`, node `della-l02g9`, MaxRSS `22953796K`, logs `/src/slurms/c21_reldrop_s57_8708124_5.out/.err`.
+- Checkpoint visibility limitation: `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2` is not mounted in the current container, and `/src/train_logs/cycle21_*` does not show the completed `last.pth` files. All six dependent evaluator tasks passed their checkpoint preflight and are running, so the checkpoints are compute-visible; local absence is an observability limitation, not concrete failure.
+- Evaluator array `8708125_[0-5]` is running through the required path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+  - At readout all tasks were `RUNNING`, exit `0:0`, time limit `04:00:00`, memory `64G`.
+  - Nodes/elapsed: task 0 `della-l05g1` `01:35:35`; task 1 `della-i14g4` `01:34:34`; task 2 `della-i14g6` `01:34:04`; task 3 `della-l04g6` `01:34:04`; task 4 `della-i14g8` `01:15:49`; task 5 `della-l04g8` `01:15:49`.
+  - No `/src/tables/*cycle21*reldrop*csv` existed yet. No enhanced recon tensors were visible yet; task 0 had written recon intermediates under `/src/evals/cycle21_subj05_reldrop0_1sess_150ep/`.
+
+Recovery/rerun commands launched:
+- None. The original training array completed and the original dependent evaluator array is healthy/running; duplicate jobs were not submitted.
+
+Assigned dropout probability summaries:
+- subj05 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`, range `0.0000-0.0000`, corr `nan`.
+- subj05 `reldrop_low`: mean `0.0625`, range `0.0200-0.1000`, early/higher `0.0570/0.0647`, corr `-1.000`.
+- subj05 `reldrop_mid`: mean `0.1144`, range `0.0400-0.1800`, early/higher `0.1047/0.1182`, corr about `-1.000`.
+- subj07 `reldrop0`: all/early/higher `0.0000/0.0000/0.0000`, range `0.0000-0.0000`, corr `nan`.
+- subj07 `reldrop_low`: mean `0.0648`, range `0.0200-0.1000`, early/higher `0.0561/0.0678`, corr about `-1.000`.
+- subj07 `reldrop_mid`: mean `0.1184`, range `0.0400-0.1800`, early/higher `0.1031/0.1236`, corr `-1.000`.
+
+Final training diagnostics and realized dropout rates:
+- subj05 `reldrop0`: test loss `16.6`, blurry PixCorr `0.193`, test fwd/bwd `0.663/0.560`; train loss `5.60`, train blurry PixCorr `0.802`, train fwd/bwd `1.000/1.000`; realized drops `0.0000/0.0000/0.0000`.
+- subj05 `reldrop_low`: test loss `16.7`, blurry PixCorr `0.193`, test fwd/bwd `0.667/0.583`; train loss `5.61`, train blurry PixCorr `0.798`, train fwd/bwd `1.000/1.000`; realized drops `0.0626/0.0571/0.0648`.
+- subj05 `reldrop_mid`: test loss `16.6`, blurry PixCorr `0.208`, test fwd/bwd `0.670/0.553`; train loss `5.64`, train blurry PixCorr `0.797`, train fwd/bwd `1.000/1.000`; realized drops `0.1150/0.1050/0.1180`.
+- subj07 `reldrop0`: test loss `16.7`, blurry PixCorr `0.233`, test fwd/bwd `0.733/0.573`; train loss `5.68`, train blurry PixCorr `0.788`, train fwd/bwd `1.000/1.000`; realized drops `0.0000/0.0000/0.0000`.
+- subj07 `reldrop_low`: test loss `16.3`, blurry PixCorr `0.214`, test fwd/bwd `0.723/0.573`; train loss `5.70`, train blurry PixCorr `0.786`, train fwd/bwd `1.000/1.000`; realized drops `0.0649/0.0560/0.0680`.
+- subj07 `reldrop_mid`: test loss `16.5`, blurry PixCorr `0.234`, test fwd/bwd `0.710/0.577`; train loss `5.71`, train blurry PixCorr `0.783`, train fwd/bwd `1.000/1.000`; realized drops `0.1190/0.1030/0.1240`.
+
+Final CSV metric table and deltas:
+- Not available yet. The evaluator array is still running and no final CSVs existed at readout.
+
+Sensitivity diagnostic:
+- Not run. Per plan, this waits until all six CSVs exist or missing rows are concretely unrecoverable.
+
+Decision:
+- Operationally incomplete. The six trainings completed and the fixed evaluator is running, but refined metrics and same-subject deltas are not yet available. No scientific pass/fail decision can be made yet.
+
+Recommended next research questions:
+- Did `8708125_[0-5]` finish within `04:00:00` and write all six enhanced recon tensors plus final CSVs?
+- Once CSVs exist, do `reldrop_low` or `reldrop_mid` improve same-subject refined BrainRet by about `+0.02` for subjects 5 and 7 without semantic or higher-visual regressions?
+- After CSV completion, does the sensitivity diagnostic show reliability dropout shifting learned sensitivity in a way that aligns with BrainRet and higher-visual outcomes?
