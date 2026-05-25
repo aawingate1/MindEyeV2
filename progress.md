@@ -1944,3 +1944,72 @@ Decision:
 
 Recommended next research questions:
 - If continuing after dropout closure, the defensible fallback is one small subject-functional-alignment adapter with same-code `adapter0` control and one conservative trainable setting on subjects 5 and 7, using the unchanged one-session/evaluator protocol and the same semantic-protected success rule.
+
+## Cycle 28 - 2026-05-25 Opening Provenance
+
+Plan source: read `/plan.md` and executing only the Cycle 28 zero-controlled subject-adapter plan. Telegram report is due this cycle.
+
+Required reliability-dropout closure note before implementation:
+- Cycle 21 reliability dropout is closed as neutral/harmful for the MindEyeV2 one-session weak-subject setting.
+- All six Cycle 21 rows trained and evaluated successfully with exit `0:0`: `cycle21_subj05_reldrop{0,_low,_mid}_1sess_150ep` and `cycle21_subj07_reldrop{0,_low,_mid}_1sess_150ep`.
+- Enhanced reconstruction tensors and final CSVs exist for all six rows under `/src/evals/<model_name>/<model_name>_all_enhancedrecons.pt` and `/src/tables/<model_name>_all_enhancedrecons.csv`.
+- Evaluator logs confirm `final_evaluations.py` consumed each `*_all_enhancedrecons.pt` tensor.
+- Sensitivity diagnostic exists at `/src/tables/cycle27_reldrop_sensitivity.csv`.
+- Scientific decision: nonzero dropout did not pass. Subject 5 had no BrainRet gain (`reldrop_low -0.007444`, `reldrop_mid +0.000333`), and subject 7 `reldrop_low` traded BrainRet gain (`+0.021889`) for ImageRet/PixCorr/ROI-correlation degradation, while `reldrop_mid` was below the target BrainRet gain and degraded protected metrics.
+
+## Cycle 28 - 2026-05-25
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is due.
+- Cycle 21 reliability dropout was explicitly closed before implementation; see the Cycle 28 opening provenance note above.
+
+Code/config changes:
+- Added `SubjectResidualAdapter` in `/src/models.py` at the model utility layer before `BrainNetwork`. Form: `x + gamma * W_up(GELU(W_down(LayerNorm(x))))`; `W_up.weight` and `W_up.bias` are zero-initialized, so enabled adapters start as exact no-ops.
+- Added disabled-by-default adapter CLI flags in `/src/Train.py`: `--use_subject_adapter`, `--subject_adapter_dim`, `--freeze_subject_adapter`. Default behavior leaves the model graph unchanged and adds no adapter checkpoint keys.
+- Inserted the adapter at the required point: immediately after subject-specific `model.ridge(...)` output is concatenated into `voxel_ridge`, and immediately before the shared `model.backbone(voxel_ridge)` call in both training and test paths.
+- Added the same adapter flags and insertion point to `/src/recon_inference.py` so checkpoints from adapter rows can be loaded and evaluated with the validated enhanced path.
+- Added Slurm scripts: `/src/cycle28_adapter_smoke.slurm`, `/src/cycle28_adapter_train_s57.slurm`, and `/src/cycle28_adapter_eval_s57.slurm`.
+- After the first smoke landed on 40 GB A100 nodes and OOMed, constrained the Cycle 28 smoke/train/eval scripts to A100 `gpu80` nodes. Batch size, hidden dim, one-session split, initialization, refiner, evaluator, and model names were not changed.
+
+Sanity checks:
+- `/src/fmri/bin/python -m py_compile /src/models.py /src/Train.py /src/recon_inference.py /src/enhanced_recon_inference.py /src/final_evaluations.py` passed.
+- `bash -n /src/cycle28_adapter_smoke.slurm /src/cycle28_adapter_train_s57.slurm /src/cycle28_adapter_eval_s57.slurm` passed.
+- Lightweight tensor sanity check passed: disabled backbone shape path returned `(2,4,16)`/`(2,4,16)` on a reduced test model; full-size adapter init had `adapter_max_abs_delta=0.0`.
+- Full-size adapter parameter count at `hidden_dim=4096`, `subject_adapter_dim=128`: `1,060,993` params. `adapter_low` trainable params: `1,060,993`; frozen `adapter0` trainable params after `requires_grad_(False)`: `0`.
+- Smoke logs also confirmed adapter initialization on the real graph: `Subject adapter init max_abs_delta=0`; `adapter0` trainable `0`, `adapter_low` trainable `1,060,993`.
+
+Commands/jobs launched:
+- Initial smoke: `sbatch /src/cycle28_adapter_smoke.slurm` -> job `8727970_[0-1]`, subject 7, 3 epochs, rows `cycle28_smoke_subj07_adapter0_1sess_3ep` and `cycle28_smoke_subj07_adapter_low_1sess_3ep`, one A100, `64G`, `01:00:00`.
+- Initial full train dependency: `sbatch --dependency=afterok:8727970 /src/cycle28_adapter_train_s57.slurm` -> job `8727971_[0-3]`; cancelled after the smoke failed before any task started.
+- Initial evaluator dependency: `sbatch --dependency=afterok:8727971 /src/cycle28_adapter_eval_s57.slurm` -> job `8727972_[0-3]`; cancelled after the smoke failed before any task started.
+- Recovery smoke after constraining to A100 `gpu80`: `sbatch /src/cycle28_adapter_smoke.slurm` -> job `8728063_[0-1]`.
+- Recovery full train dependency: `sbatch --dependency=afterok:8728063 /src/cycle28_adapter_train_s57.slurm` -> job `8728064_[0-3]`.
+- Recovery evaluator dependency: `sbatch --dependency=afterok:8728064 /src/cycle28_adapter_eval_s57.slurm` -> job `8728065_[0-3]`.
+
+Initial smoke failure details:
+- `8727970_0` `cycle28_smoke_subj07_adapter0_1sess_3ep`: `FAILED`, exit `1:0`, node `della-i14g18`, elapsed `00:01:32`, MaxRSS `21588440K`, logs `/src/slurms/c28_adapter_smoke_8727970_0.out/.err`.
+- `8727970_1` `cycle28_smoke_subj07_adapter_low_1sess_3ep`: `FAILED`, exit `1:0`, node `della-i14g4`, elapsed `00:01:27`, MaxRSS `21448208K`, logs `/src/slurms/c28_adapter_smoke_8727970_1.out/.err`.
+- Failure class: CUDA OOM on 40 GB A100 at first `accelerator.backward(loss)`, attempting a `774 MiB` allocation with only about `596 MiB` free. Both logs reached model build, official multisubject checkpoint load, adapter no-op check, and epoch start before OOM.
+- Recovery action: no duplicate full rows were run. Blocked full/eval arrays were cancelled, and only the 1-hour smoke plus dependent exact full/eval rows were relaunched with A100 `gpu80` constraint.
+
+Recovery scheduler state at readout:
+- `8728063_0` smoke `adapter0`: `RUNNING`, node `della-l07g7`, elapsed `00:00:03`, time limit `01:00:00`, `64G`, A100 `gpu80`.
+- `8728063_1` smoke `adapter_low`: `PENDING`, elapsed `00:00:00`, time limit `01:00:00`, `64G`, A100 `gpu80`.
+- `8728064_[0-3]` full rows are `PENDING (Dependency=afterok:8728063_*)`, time limit `04:30:00`, `64G`, A100 `gpu80`.
+- `8728065_[0-3]` evaluator rows are `PENDING (Dependency=afterok:8728064_*)`, time limit `04:00:00`, `64G`, A100 `gpu80`.
+- Full row model names queued behind the smoke: `cycle28_subj05_adapter0_1sess_150ep`, `cycle28_subj05_adapter_low_1sess_150ep`, `cycle28_subj07_adapter0_1sess_150ep`, `cycle28_subj07_adapter_low_1sess_150ep`.
+
+Metrics/artifact status:
+- No Cycle 28 full training diagnostics, checkpoints, enhanced reconstruction tensors, final CSVs, refined metric table, or same-subject `adapter_low - adapter0` deltas exist yet because the first smoke failed and the recovery smoke/full/eval chain is still running/pending.
+- Required evaluator path is encoded for every full row as `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`, with `final_evaluations.py` pointed at `evals/<model_name>/<model_name>_all_enhancedrecons.pt`.
+
+Decision:
+- Operationally incomplete. The adapter code and sanity checks passed, but the initial 40 GB smoke exposed a CUDA OOM. Recovery is queued/running on A100 `gpu80` with unchanged MindEye2 protocol and exact requested full row names.
+
+Recommended next research questions:
+- Does `8728063_[0-1]` complete on `gpu80` and preserve the adapter no-op/parameter-count checks without OOM?
+- If the recovery smoke passes, do the four dependent full rows `8728064_[0-3]` complete within `04:30:00` and produce final train/test loss, blurry PixCorr, forward retrieval, and backward retrieval diagnostics?
+- After `8728065_[0-3]` writes enhanced tensors and CSVs, does `adapter_low` improve refined BrainRet by about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, distances, visual-cortex correlation, and HigherVis?
+
+Telegram-ready update:
+Cycle 28 implemented the zero-initialized subject residual adapter and queued the exact four planned rows for subjects 5 and 7. The adapter is inserted after the subject ridge and before the shared backbone, is disabled by default, and starts as an exact no-op (`max_abs_delta=0.0`); trainable size is `1,060,993` params at bottleneck dim `128`, while frozen `adapter0` has `0` trainable adapter params. The first 1-hour smoke on 40 GB A100 nodes failed at first backward with CUDA OOM after loading the official checkpoint, so the blocked full/eval arrays were cancelled before running. I relaunched the smoke and dependent full/eval chain constrained to A100 `gpu80`: smoke `8728063_[0-1]`, full train `8728064_[0-3]`, eval `8728065_[0-3]`. At readout, smoke task 0 was running on `della-l07g7`, task 1 was pending, and the full/eval arrays were dependency-gated. No Cycle 28 final metrics or plots exist yet.

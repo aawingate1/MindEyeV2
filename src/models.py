@@ -12,6 +12,24 @@ from tqdm import tqdm
 import utils
 
 from diffusers.models.vae import Decoder
+
+
+class SubjectResidualAdapter(nn.Module):
+    def __init__(self, hidden_dim, adapter_dim=128):
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.down = nn.Linear(hidden_dim, adapter_dim)
+        self.act = nn.GELU()
+        self.up = nn.Linear(adapter_dim, hidden_dim)
+        self.gamma = nn.Parameter(torch.ones(1))
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def forward(self, x):
+        residual = self.up(self.act(self.down(self.norm(x))))
+        return x + self.gamma.to(dtype=x.dtype) * residual
+
+
 class BrainNetwork(nn.Module):
     def __init__(self, h=4096, in_dim=15724, out_dim=768, seq_len=2, n_blocks=4, drop=.15, clip_size=768, blurry_recon=True, clip_scale=1):
         super().__init__()

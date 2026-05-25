@@ -93,6 +93,18 @@ parser.add_argument(
     "--max_images",type=int,default=None,
     help="Optional smoke-test limit on unique test images. Full evaluations leave this unset.",
 )
+parser.add_argument(
+    "--use_subject_adapter", action=argparse.BooleanOptionalAction, default=False,
+    help="Instantiate the subject adapter used by matching training checkpoints.",
+)
+parser.add_argument(
+    "--subject_adapter_dim", type=int, default=128,
+    help="Bottleneck dimension for --use_subject_adapter.",
+)
+parser.add_argument(
+    "--freeze_subject_adapter", action=argparse.BooleanOptionalAction, default=False,
+    help="Accepted for checkpoint-compatible adapter0 inference; inference always freezes the full model.",
+)
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
 else:
@@ -221,9 +233,18 @@ class RidgeRegression(torch.nn.Module):
 model.ridge = RidgeRegression([num_voxels], out_features=hidden_dim)
 
 from diffusers.models.vae import Decoder
-from models import BrainNetwork
+from models import BrainNetwork, SubjectResidualAdapter
 model.backbone = BrainNetwork(h=hidden_dim, in_dim=hidden_dim, seq_len=1, 
                           clip_size=clip_emb_dim, out_dim=clip_emb_dim*clip_seq_dim) 
+if use_subject_adapter:
+    model.subject_adapter = SubjectResidualAdapter(hidden_dim=hidden_dim, adapter_dim=subject_adapter_dim)
+    subject_adapter_params = sum(p.numel() for p in model.subject_adapter.parameters())
+    print(
+        f"Subject adapter enabled for inference: dim={subject_adapter_dim}, "
+        f"params={subject_adapter_params}, freeze_flag={freeze_subject_adapter}"
+    )
+else:
+    print("Subject adapter disabled for inference.")
 utils.count_params(model.ridge)
 utils.count_params(model.backbone)
 utils.count_params(model)
@@ -386,6 +407,8 @@ with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.float16):
         
         for rep in range(3):
             voxel_ridge = model.ridge(voxel[:,[rep]],0) # 0th index of subj_list
+            if use_subject_adapter:
+                voxel_ridge = model.subject_adapter(voxel_ridge)
             backbone0, clip_voxels0, blurry_image_enc0 = model.backbone(voxel_ridge)
             if rep==0:
                 clip_voxels = clip_voxels0

@@ -275,6 +275,18 @@ parser.add_argument(
     "--rel_metric", type=str, default="sim_mse", choices=["sim_mse"],
     help="Relational consistency metric.",
 )
+parser.add_argument(
+    "--use_subject_adapter", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable a zero-initialized residual adapter between the subject ridge and shared backbone.",
+)
+parser.add_argument(
+    "--subject_adapter_dim", type=int, default=128,
+    help="Bottleneck dimension for --use_subject_adapter.",
+)
+parser.add_argument(
+    "--freeze_subject_adapter", action=argparse.BooleanOptionalAction, default=False,
+    help="Freeze the subject adapter for same-code no-effect controls.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -706,12 +718,31 @@ print(b.shape, model.ridge(b,0).shape)
 # In[13]:
 
 
-from models import BrainNetwork
+from models import BrainNetwork, SubjectResidualAdapter
 model.backbone = BrainNetwork(h=hidden_dim, in_dim=hidden_dim, seq_len=1, n_blocks=n_blocks,
                           clip_size=clip_emb_dim, out_dim=clip_emb_dim*clip_seq_dim, 
                           blurry_recon=blurry_recon, clip_scale=clip_scale)
 utils.count_params(model.backbone)
 utils.count_params(model)
+
+if use_subject_adapter:
+    model.subject_adapter = SubjectResidualAdapter(hidden_dim=hidden_dim, adapter_dim=subject_adapter_dim)
+    if freeze_subject_adapter:
+        model.subject_adapter.requires_grad_(False)
+    subject_adapter_params = sum(p.numel() for p in model.subject_adapter.parameters())
+    subject_adapter_trainable_params = sum(p.numel() for p in model.subject_adapter.parameters() if p.requires_grad)
+    print(
+        f"Subject adapter enabled: dim={subject_adapter_dim}, "
+        f"params={subject_adapter_params}, trainable={subject_adapter_trainable_params}, "
+        f"freeze={freeze_subject_adapter}"
+    )
+    with torch.no_grad():
+        adapter_input_check = torch.randn((2, 1, hidden_dim))
+        adapter_check = model.subject_adapter(adapter_input_check)
+        adapter_max_abs_delta = (adapter_check - adapter_input_check).abs().max().item()
+    print(f"Subject adapter init max_abs_delta={adapter_max_abs_delta:.8g}")
+else:
+    print("Subject adapter disabled: baseline model graph unchanged.")
 
 # test that the model works on some fake data
 b = torch.randn((2,1,hidden_dim))
@@ -771,6 +802,11 @@ opt_grouped_parameters = [
     {'params': [p for n, p in model.backbone.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
     {'params': [p for n, p in model.backbone.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
 ]
+if use_subject_adapter and not freeze_subject_adapter:
+    opt_grouped_parameters.extend([
+        {'params': [p for n, p in model.subject_adapter.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
+        {'params': [p for n, p in model.subject_adapter.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0},
+    ])
 if use_prior:
     opt_grouped_parameters.extend([
         {'params': [p for n, p in model.diffusion_prior.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': 1e-2},
@@ -1140,6 +1176,8 @@ for epoch in progress_bar:
 
             voxel_ridge_list = [model_for_submodules.ridge(voxel_list[si],si) for si,s in enumerate(subj_list)]
             voxel_ridge = torch.cat(voxel_ridge_list, dim=0)
+            if use_subject_adapter:
+                voxel_ridge = model_for_submodules.subject_adapter(voxel_ridge)
 
             if adapter_prior_weight > 0:
                 if adapter_prior_type == "weights":
@@ -1321,6 +1359,8 @@ for epoch in progress_bar:
 
                 for rep in range(3):
                     voxel_ridge = model_for_submodules.ridge(voxel[:,rep],0) # 0th index of subj_list
+                    if use_subject_adapter:
+                        voxel_ridge = model_for_submodules.subject_adapter(voxel_ridge)
                     backbone0, clip_voxels0, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
                     if rep==0:
                         clip_voxels = clip_voxels0
