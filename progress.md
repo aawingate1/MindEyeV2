@@ -2242,3 +2242,79 @@ Recommended next research questions:
 - Did `8867095_0` and `8867095_1` build `/src/tables/cycle30_subj05_clip_train_stats.pt` from only `wds/subj05/train/{0..0}.tar`, with `shared1000_or_new_test_used=False`?
 - Do the four full rows complete with finite final train/test functional-alignment losses, mean distances, covariance distances, blurry PixCorr, and forward/backward retrieval?
 - Once `8867096_[0-3]` completes, do `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
+
+## Cycle 33 - 2026-05-28
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- This cycle remained limited to recovering, validating, and interpreting the already-launched Cycle 30 distributional functional-alignment experiment. No new modeling branch, duplicate training row, grid, adapter, refiner/generator change, or evaluator change was launched.
+
+Code/config changes:
+- None.
+
+Commands run:
+- `squeue -j 8867095,8867096 -o '%i|%T|%M|%l|%D|%R'`
+- `sacct -j 8867095,8867096 --format=JobIDRaw,JobID,JobName%45,State,ExitCode,Elapsed,MaxRSS,NodeList,ReqMem,Timelimit%20 -P`
+- `scontrol show job 8867096_0 8867096_1 8867096_2 8867096_3`
+- Inspected `/src/slurms/c30_align_s57_8867095_{0,1,2,3}.out/.err`, `/src/tables`, `/src/evals`, and the expected compute-visible checkpoint/evaluator paths.
+- Loaded Cycle 30 alignment stats with `/src/fmri/bin/python` and `torch.load(..., map_location='cpu')`.
+
+Scheduler/accounting readout:
+- Full training array `8867095_[0-3]` completed successfully:
+  - `8867095_0` / `cycle30_subj05_align0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l03g2`, elapsed `02:21:22`, batch MaxRSS `21659252K`, requested `64G`, time limit `04:30:00`, logs `/src/slurms/c30_align_s57_8867095_0.out/.err`.
+  - `8867095_1` / `cycle30_subj05_align_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l02g15`, elapsed `02:07:41`, batch MaxRSS `21607776K`, requested `64G`, time limit `04:30:00`, logs `/src/slurms/c30_align_s57_8867095_1.out/.err`.
+  - `8867095_2` / `cycle30_subj07_align0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l02g12`, elapsed `02:06:10`, batch MaxRSS `21591016K`, requested `64G`, time limit `04:30:00`, logs `/src/slurms/c30_align_s57_8867095_2.out/.err`.
+  - `8867095_3` / `cycle30_subj07_align_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l03g2`, elapsed `02:18:32`, batch MaxRSS `21446276K`, requested `64G`, time limit `04:30:00`, logs `/src/slurms/c30_align_s57_8867095_3.out/.err`.
+- Dependent evaluator array `8867096_[0-3]` is now dependency-cleared but still pending for priority. `squeue` shows all four tasks `PENDING`; `scontrol` reports `Dependency=(null)`, requested `64G`, time limit `04:00:00`, command `/src/cycle30_align_eval_s57.slurm`.
+  - `8867096_0` projected start `2026-05-28T13:39:08`, scheduled node `della-l04g1`, stdout/stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_0.out/.err`.
+  - `8867096_1` projected start `2026-05-28T13:39:07`, scheduled node `della-l03g16`, stdout/stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_1.out/.err`.
+  - `8867096_2` projected start `2026-05-28T13:39:07`, scheduled node `della-l03g9`, stdout/stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_2.out/.err`.
+  - `8867096_3` projected start unknown, no scheduled node yet, stdout/stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_3.out/.err`.
+
+Stats provenance:
+- Subject 5 stats are now present and valid at `/src/tables/cycle30_subj05_clip_train_stats.pt`, size `11084456` bytes.
+  - Source/train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj05/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `test_sources_used=[]`; `count=600`; `skipped_duplicate_batches=4`; `unique_image_count=482`; image index range `308-72877`; site `clip`; feature `FrozenOpenCLIPImageEmbedder tokens mean-pooled over sequence`.
+  - Mean shape `(1664,)`, covariance shape `(1664, 1664)`, dtype `torch.float32`; mean norm `21.9571`; covariance norm `24.1234`; covariance diagonal range `0.000757-7.141074`.
+- Subject 7 stats remain present and valid at `/src/tables/cycle30_subj07_clip_train_stats.pt`, size `11084456` bytes.
+  - Source/train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj07/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `test_sources_used=[]`; `count=600`; `skipped_duplicate_batches=4`; `unique_image_count=482`; image index range `182-72907`; site `clip`; feature `FrozenOpenCLIPImageEmbedder tokens mean-pooled over sequence`.
+  - Mean shape `(1664,)`, covariance shape `(1664, 1664)`, dtype `torch.float32`; mean norm `22.0371`; covariance norm `23.9916`; covariance diagonal range `0.000878-6.695669`.
+
+Training diagnostics:
+- All four rows loaded the official subject-specific multisubject checkpoint, initialized the CLIP-site functional-alignment reference from subject-specific training-only stats, completed 150 epochs, and saved final checkpoints according to stdout.
+- Expected compute-visible checkpoint paths from training logs:
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj05_align0_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj05_align_low_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj07_align0_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj07_align_low_1sess_150ep/last.pth`
+- The local container cannot directly list `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2`, but evaluator jobs use that same compute-visible path and remain queued. Treat local `/scratch` absence as a mount visibility limitation, not checkpoint failure, unless evaluator logs later contradict this.
+
+Final 150-epoch training-log metrics:
+
+| subject | row | test loss | test blurry PixCorr | test fwd | test bwd | test align loss | test mean dist | test cov dist | train loss | train blurry PixCorr | train fwd | train bwd | train align loss | train scaled align | train mean dist | train cov dist |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | align0 | 14.3 | 0.193 | 0.670 | 0.583 | 0.31000 | 22.7 | 24.6 | 5.88 | 0.801 | 1.000 | 1.000 | 0.34800 | 0.000000 | 24.1 | 29.3 |
+| subj05 | align_low | 15.3 | 0.174 | 0.413 | 0.313 | 0.00914 | 3.85 | 25.8 | 5.88 | 0.799 | 1.000 | 1.000 | 0.00465 | 0.000233 | 2.62 | 36.4 |
+| subj07 | align0 | 14.2 | 0.226 | 0.730 | 0.563 | 0.30100 | 22.4 | 24.2 | 5.95 | 0.788 | 1.000 | 1.000 | 0.33100 | 0.000000 | 23.5 | 29.5 |
+| subj07 | align_low | 15.0 | 0.223 | 0.313 | 0.397 | 0.00967 | 3.96 | 25.1 | 5.94 | 0.787 | 1.000 | 1.000 | 0.00490 | 0.000245 | 2.68 | 37.4 |
+
+Manipulation-check interpretation:
+- `align_low` strongly reduced mean-distance dominated functional-alignment loss in both subjects, from test alignment loss `0.310 -> 0.00914` in subject 5 and `0.301 -> 0.00967` in subject 7.
+- This is not yet scientific success. The plan requires enhanced-evaluator metrics; training-log retrieval and lower alignment loss are only manipulation checks.
+- Training-log test retrieval worsened in both `align_low` rows, especially subject 5 (`fwd 0.670 -> 0.413`, `bwd 0.583 -> 0.313`) and subject 7 (`fwd 0.730 -> 0.313`, `bwd 0.563 -> 0.397`). This raises concern for coarse distribution matching without preserved instance-level geometry, but the final decision must wait for refined evaluator CSVs.
+
+Evaluation artifacts:
+- No final enhanced tensors or final CSVs exist yet under `/src/evals` or `/src/tables` for the four Cycle 30 rows because evaluator array `8867096_[0-3]` has not started.
+- Required refined metric table and same-subject `align_low - align0` deltas are unavailable until `8867096_[0-3]` completes and logs confirm `final_evaluations.py` consumed the enhanced tensor via the `all_recons_path` line.
+
+Recovery/rerun actions:
+- None. The original evaluator array is alive, dependency-cleared, and pending for priority. Launching a duplicate evaluator now would be unnecessary and could violate the recovery plan.
+
+Decision:
+- Operationally advanced but still incomplete. Full training succeeded for the four exact active rows, subject-specific training-only stats are verified for both subjects, and the dependent evaluator is queued correctly.
+- No Cycle 30 success/failure decision can be made until enhanced-evaluator CSVs exist. The immediate next valid action is to let `8867096_[0-3]` run, then verify the enhanced tensor consumption path and compute the required refined metric table plus same-subject deltas.
+
+Recommended next research questions:
+- Does `8867096_[0-3]` complete with exit `0:0` and produce enhanced tensors at `evals/<model_name>/<model_name>_all_enhancedrecons.pt` for all four rows?
+- Do evaluator logs confirm `final_evaluations.py` consumed each enhanced tensor via the `all_recons_path` line?
+- Do refined `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
+- If refined metrics mirror the training-log retrieval collapse, close this distributional functional-alignment attempt as coarse global matching without preserved instance-level functional geometry.

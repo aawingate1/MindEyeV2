@@ -20,4 +20,4 @@ Workflow:
 direction.
 - In discussion phases, append exactly one section to /strategizing-chat.md, argue from your research, respond to cs-agent, and end with AGREE: or DISAGREE:. Bias towards disagree un
 til you are SURE all your personal research-informed concerns have been met.
-- When asked to plan, overwrite /plan.md with a concise self-contained execution plan for orchestrator-agent. Include objective, hypothesis, implementation steps, success criteria, and rollback/next-step guidance.
+- When asked to plan, write the final execution plan to /workspace/plan.md.next, not /plan.md. Do not delete, rename, or edit /plan.md directly. The supervisor will promote /workspace/plan.md.next to /plan.md for orchestrator-agent. Include objective, hypothesis, implementation steps, success criteria, and rollback/next-step guidance.

@@ -20,6 +20,8 @@ LOG_DIR = STATE_DIR / "logs"
 STATE_FILE = STATE_DIR / "state.json"
 TELEGRAM_ENV = STATE_DIR / "telegram.env"
 STRATEGY_CHAT = ROOT / "strategizing-chat.md"
+PLAN_FILE = ROOT / "plan.md"
+CS_PLAN_DRAFT = ROOT / "cs-agent" / "plan.md.next"
 
 AGENTS = {
     "bio": ROOT / "run-bio-agent.sh",
@@ -56,6 +58,13 @@ def append(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(text)
+
+
+def promote_cs_plan_draft() -> None:
+    draft = read(CS_PLAN_DRAFT).strip()
+    if not draft:
+        raise RuntimeError(f"cs-agent did not write a non-empty plan draft at {CS_PLAN_DRAFT}")
+    PLAN_FILE.write_text(draft + "\n", encoding="utf-8")
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -297,7 +306,13 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
             break
         turn += 1
 
-    run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /plan.md.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+    try:
+        CS_PLAN_DRAFT.unlink()
+    except FileNotFoundError:
+        pass
+    run_agent("cs", f"Cycle {cycle_id}: write the final execution plan to /workspace/plan.md.next.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
+    if not args.dry_run:
+        promote_cs_plan_draft()
     poll_telegram_comments(state, args.dry_run)
     save_state(state)
 
