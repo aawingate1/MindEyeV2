@@ -2150,3 +2150,47 @@ Cycle 30 smoke completion and full-array launch update:
 - Because the smoke gate passed, launched full training: `sbatch /src/cycle30_align_train_s57.slurm` -> job `8867095_[0-3]` for exactly `cycle30_subj05_align0_1sess_150ep`, `cycle30_subj05_align_low_1sess_150ep`, `cycle30_subj07_align0_1sess_150ep`, and `cycle30_subj07_align_low_1sess_150ep`.
 - Launched dependent evaluator: `sbatch --dependency=afterok:8867095 /src/cycle30_align_eval_s57.slurm` -> job `8867096_[0-3]` using the unchanged enhanced path.
 - Scheduler state after submission: `8867095_[0-3]` pending with `04:30:00`, no node assigned; `8867096_[0-3]` pending on dependency with `04:00:00`, no node assigned.
+
+## Cycle 31 - 2026-05-28
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Per plan, this cycle was limited to recovering, validating, and interpreting the already-launched Cycle 30 functional-alignment chain. No new modeling branch, grid, adapter, refiner/generator change, or evaluator change was started.
+
+Code/config changes:
+- None. `/src/cycle30_align_train_s57.slurm` and `/src/cycle30_align_eval_s57.slurm` remain the active exact-row scripts.
+
+Scheduler/accounting readout:
+- Training array `8867095_[0-3]` is still pending; no task has started, so there are no stdout/stderr logs, checkpoints, MaxRSS values, final losses, or failure classes yet.
+  - `8867095_0` `cycle30_subj05_align0_1sess_150ep`: `PENDING`, reason `Priority`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:30:00`, scheduled node `della-l04g6`, projected start `2026-05-28T03:28:35`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_0.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_0.err`.
+  - `8867095_1` `cycle30_subj05_align_low_1sess_150ep`: `PENDING`, reason `Priority`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:30:00`, scheduled node `della-l02g7`, projected start `2026-05-28T02:47:55`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_1.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_1.err`.
+  - `8867095_2` `cycle30_subj07_align0_1sess_150ep`: `PENDING`, reason `Priority`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:30:00`, scheduled node `della-l02g5`, projected start `2026-05-28T03:28:35`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_2.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_2.err`.
+  - `8867095_3` `cycle30_subj07_align_low_1sess_150ep`: `PENDING`, reason `Priority`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:30:00`, no projected node/start yet, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_3.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_s57_8867095_3.err`.
+- Dependent evaluator array `8867096_[0-3]` is still pending on `afterok:8867095_*(unfulfilled)`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:00:00`.
+  - Expected stdout/stderr paths are `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_{0,1,2,3}.out/.err`.
+
+Stats and artifact validation:
+- Subject 7 stats exist at `/src/tables/cycle30_subj07_clip_train_stats.pt`, size `11084456` bytes. Loaded keys: `count`, `cov`, `mean`, `provenance`, `site`, `source`, and `training_only`.
+- Subject 7 stats are training-only: source `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj07/train/{0..0}.tar`, `training_only=True`, `count=600`, `skipped_duplicate_batches=4`, `unique_image_count=482`, site `clip`, mean shape `(1664,)`, covariance shape `(1664, 1664)`, dtype `torch.float32`, mean norm `22.0371`, covariance norm `23.9916`, covariance diagonal range `0.000878-6.695669`.
+- Subject 5 stats are not present yet at `/src/tables/cycle30_subj05_clip_train_stats.pt`. This is expected while `8867095_0` and `8867095_1` remain pending; the training Slurm script builds the subject-specific stats before training starts. Treat subject 5 results as unavailable until that file is built and verified from `wds/subj05/train/{0..0}.tar`.
+- No enhanced tensors or final CSVs exist yet for the four required rows:
+  - `cycle30_subj05_align0_1sess_150ep`
+  - `cycle30_subj05_align_low_1sess_150ep`
+  - `cycle30_subj07_align0_1sess_150ep`
+  - `cycle30_subj07_align_low_1sess_150ep`
+
+Recovery/rerun actions:
+- None. The original exact training array is still pending and recoverable scheduler-side, and the evaluator dependency remains correctly attached. Launching duplicate training or evaluator jobs now would violate the plan.
+
+Metric table and deltas:
+- Not available. No full training task has run, no checkpoints exist, and the evaluator has not started.
+- Required `align_low - align0` deltas for subjects 5 and 7 cannot be computed yet.
+
+Decision:
+- Operationally incomplete and scheduler-limited. The Cycle 30 smoke gate remains valid, but the four full rows have not yet produced checkpoints or enhanced-evaluator CSVs.
+- Continue monitoring `8867095_[0-3]`; after all four training tasks complete, verify subject 5 stats provenance, parse training diagnostics, and let `8867096_[0-3]` run. If any checkpoint completes without a final CSV, rerun only the validated enhanced evaluator path for that same model name.
+
+Recommended next research questions:
+- Did `8867095_[0-3]` start at the projected backfill times and build subject 5 stats from only `wds/subj05/train/{0..0}.tar`?
+- Do all four full rows complete with finite final functional-alignment losses, mean distances, covariance distances, blurry PixCorr, and forward/backward retrieval?
+- Once `8867096_[0-3]` completes, do same-subject `align_low - align0` deltas reach about `+0.02` BrainRet while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EffNet/SwAV distances?
