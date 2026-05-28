@@ -2013,3 +2013,80 @@ Recommended next research questions:
 
 Telegram-ready update:
 Cycle 28 implemented the zero-initialized subject residual adapter and queued the exact four planned rows for subjects 5 and 7. The adapter is inserted after the subject ridge and before the shared backbone, is disabled by default, and starts as an exact no-op (`max_abs_delta=0.0`); trainable size is `1,060,993` params at bottleneck dim `128`, while frozen `adapter0` has `0` trainable adapter params. The first 1-hour smoke on 40 GB A100 nodes failed at first backward with CUDA OOM after loading the official checkpoint, so the blocked full/eval arrays were cancelled before running. I relaunched the smoke and dependent full/eval chain constrained to A100 `gpu80`: smoke `8728063_[0-1]`, full train `8728064_[0-3]`, eval `8728065_[0-3]`. At readout, smoke task 0 was running on `della-l07g7`, task 1 was pending, and the full/eval arrays were dependency-gated. No Cycle 28 final metrics or plots exist yet.
+
+## Cycle 29 - 2026-05-28
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is due.
+- No code, model mechanism, split, batch size, hidden dim, epoch count, adapter setting, evaluator path, refiner, or retrieval candidate pool was changed.
+
+Scheduler recovery state:
+- `squeue -j 8728063,8728064,8728065` returned no active rows because the chain had left the queue.
+- `scontrol show job 8728063 8728064 8728065` and individual `scontrol show job <id>` calls returned `slurm_load_jobs error: Invalid job id specified`, consistent with aged completed jobs no longer being visible to `scontrol`; `sacct` remained the source of truth.
+- Smoke `8728063_[0-1]` completed successfully:
+  - `8728063_0` `adapter0`: `COMPLETED`, exit `0:0`, node `della-l07g7`, elapsed `00:05:33`, batch MaxRSS `21594120K`, logs `/src/slurms/c28_adapter_smoke_8728063_0.out/.err`.
+  - `8728063_1` `adapter_low`: `COMPLETED`, exit `0:0`, node `della-l08g5`, elapsed `00:05:03`, batch MaxRSS `23051112K`, logs `/src/slurms/c28_adapter_smoke_8728063_1.out/.err`.
+- Full training `8728064_[0-3]` completed successfully:
+  - `8728064_0` `cycle28_subj05_adapter0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l02g4`, elapsed `02:09:52`, batch MaxRSS `21614440K`.
+  - `8728064_1` `cycle28_subj05_adapter_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l05g3`, elapsed `02:10:53`, batch MaxRSS `22066964K`.
+  - `8728064_2` `cycle28_subj07_adapter0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l04g6`, elapsed `02:04:20`, batch MaxRSS `22906888K`.
+  - `8728064_3` `cycle28_subj07_adapter_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l03g1`, elapsed `02:10:06`, batch MaxRSS `21447672K`.
+- Evaluation `8728065_[0-3]` completed successfully:
+  - `8728065_0` `cycle28_subj05_adapter0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l04g12`, elapsed `02:27:36`, batch MaxRSS `49241008K`.
+  - `8728065_1` `cycle28_subj05_adapter_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l02g4`, elapsed `02:26:56`, batch MaxRSS `49197744K`.
+  - `8728065_2` `cycle28_subj07_adapter0_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l02g11`, elapsed `02:26:55`, batch MaxRSS `49723620K`.
+  - `8728065_3` `cycle28_subj07_adapter_low_1sess_150ep`: `COMPLETED`, exit `0:0`, node `della-l04g6`, elapsed `02:22:22`, batch MaxRSS `46340584K`.
+
+Smoke confirmation:
+- Both recovery smoke rows loaded the official multisubject checkpoint, started epoch 0, reached backward/training progress, and saved checkpoints without OOM on `gpu80`.
+- `adapter0`: `Subject adapter enabled: dim=128, params=1060993, trainable=0, freeze=True`; `Subject adapter init max_abs_delta=0`.
+- `adapter_low`: `Subject adapter enabled: dim=128, params=1060993, trainable=1060993, freeze=False`; `Subject adapter init max_abs_delta=0`.
+- Final 3-epoch smoke diagnostics:
+  - `adapter0`: test loss `13.4`, blurry PixCorr `0.196`, test fwd/bwd `0.423/0.267`; train loss `11.5`, train blurry PixCorr `0.286`, train fwd/bwd `0.976/0.966`.
+  - `adapter_low`: test loss `13.3`, blurry PixCorr `0.196`, test fwd/bwd `0.423/0.273`; train loss `11.5`, train blurry PixCorr `0.283`, train fwd/bwd `0.978/0.968`.
+
+Full training diagnostics and checkpoint paths:
+- `cycle28_subj05_adapter0_1sess_150ep`: final test loss `14.4`, blurry PixCorr `0.189`, test fwd/bwd `0.637/0.543`; train loss `5.89`, train blurry PixCorr `0.801`, train fwd/bwd `1.000/1.000`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle28_subj05_adapter0_1sess_150ep/last.pth`.
+- `cycle28_subj05_adapter_low_1sess_150ep`: final test loss `14.3`, blurry PixCorr `0.200`, test fwd/bwd `0.663/0.540`; train loss `5.88`, train blurry PixCorr `0.800`, train fwd/bwd `1.000/1.000`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle28_subj05_adapter_low_1sess_150ep/last.pth`.
+- `cycle28_subj07_adapter0_1sess_150ep`: final test loss `14.3`, blurry PixCorr `0.219`, test fwd/bwd `0.703/0.597`; train loss `5.94`, train blurry PixCorr `0.787`, train fwd/bwd `1.000/1.000`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle28_subj07_adapter0_1sess_150ep/last.pth`.
+- `cycle28_subj07_adapter_low_1sess_150ep`: final test loss `14.2`, blurry PixCorr `0.222`, test fwd/bwd `0.700/0.590`; train loss `5.97`, train blurry PixCorr `0.787`, train fwd/bwd `1.000/1.000`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle28_subj07_adapter_low_1sess_150ep/last.pth`.
+- Local `/src/train_logs/cycle28_*/last.pth` paths are not visible in this container, but all four evaluator tasks loaded the compute-visible `/scratch/gpfs/.../train_logs/<model>/last.pth` checkpoints successfully.
+
+Evaluation artifacts and enhanced-consumption confirmation:
+- The required path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` completed for all four rows.
+- Evaluator logs confirm `final_evaluations.py` consumed `evals/<model_name>/<model_name>_all_enhancedrecons.pt` for every row via the `all_recons_path` line.
+- Enhanced tensors:
+  - `/src/evals/cycle28_subj05_adapter0_1sess_150ep/cycle28_subj05_adapter0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle28_subj05_adapter_low_1sess_150ep/cycle28_subj05_adapter_low_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle28_subj07_adapter0_1sess_150ep/cycle28_subj07_adapter0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle28_subj07_adapter_low_1sess_150ep/cycle28_subj07_adapter_low_1sess_150ep_all_enhancedrecons.pt`
+- Final CSVs:
+  - `/src/tables/cycle28_subj05_adapter0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle28_subj05_adapter_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle28_subj07_adapter0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle28_subj07_adapter_low_1sess_150ep_all_enhancedrecons.csv`
+
+Full refined metric table:
+
+| subject | row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist | SwAV dist | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | adapter0 | 0.195854 | 0.405062 | 0.847151 | 0.920398 | 0.856311 | 0.844255 | 0.769723 | 0.433867 | 0.649333 | 0.547111 | 0.419901 | 0.354024 | 0.359358 | 0.344285 | 0.321358 | 0.427158 |
+| subj05 | adapter_low | 0.194194 | 0.411969 | 0.849475 | 0.917309 | 0.846193 | 0.839817 | 0.771197 | 0.435373 | 0.667778 | 0.550444 | 0.413983 | 0.350641 | 0.357130 | 0.337356 | 0.315990 | 0.420599 |
+| subj07 | adapter0 | 0.192158 | 0.410032 | 0.820612 | 0.878952 | 0.784732 | 0.773060 | 0.825522 | 0.480245 | 0.678444 | 0.570889 | 0.314461 | 0.310144 | 0.311558 | 0.306064 | 0.271515 | 0.300882 |
+| subj07 | adapter_low | 0.190809 | 0.406053 | 0.830622 | 0.895010 | 0.779578 | 0.773203 | 0.837802 | 0.483974 | 0.677444 | 0.567111 | 0.316526 | 0.320483 | 0.324429 | 0.312241 | 0.273492 | 0.299470 |
+
+Same-subject deltas, `adapter_low - adapter0`:
+- subj05: PixCorr `-0.001660`, SSIM `+0.006908`, AlexNet-2 `+0.002324`, AlexNet-5 `-0.003089`, Inception `-0.010118`, CLIP `-0.004438`, EffNet dist `+0.001473`, SwAV dist `+0.001506`, ImageRet `+0.018444`, BrainRet `+0.003333`, VC `-0.005919`, V1 `-0.003383`, V2 `-0.002228`, V3 `-0.006928`, V4 `-0.005367`, HigherVis `-0.006560`.
+- subj07: PixCorr `-0.001349`, SSIM `-0.003979`, AlexNet-2 `+0.010010`, AlexNet-5 `+0.016058`, Inception `-0.005154`, CLIP `+0.000143`, EffNet dist `+0.012280`, SwAV dist `+0.003729`, ImageRet `-0.001000`, BrainRet `-0.003778`, VC `+0.002065`, V1 `+0.010339`, V2 `+0.012871`, V3 `+0.006177`, V4 `+0.001977`, HigherVis `-0.001412`.
+
+Decision:
+- Close this exact small residual adapter setting as negative.
+- Neither weak subject passes the protected success rule. Subject 5 has only a small BrainRet gain (`+0.003333`, far below about `+0.02`) and worsens CLIP, Inception, EfficientNet/SwAV distances, VC, and HigherVis. Subject 7 loses BrainRet (`-0.003778`) and worsens Inception plus EfficientNet/SwAV distances, with HigherVis slightly lower.
+- Per `/plan.md`, do not widen into adapter grids, high-capacity adapters, routers, MoE, generator/refiner edits, caption/VLM correction, temporal decoding, CLIP-layer fusion, hard voxel pruning, another reliability grid, or broad ROI routing from this result.
+
+Recommended next research questions:
+- Should the next discussion shift from residual post-ridge adapters to an explicit cross-subject functional-alignment objective?
+- What alignment target can be tested while preserving the unchanged MindEye2 one-session protocol and the enhanced-evaluator success gate?
+
+Telegram-ready update:
+Cycle 29 recovered the exact Cycle 28 adapter chain. Smoke `8728063_[0-1]`, full training `8728064_[0-3]`, and evaluation `8728065_[0-3]` all completed with exit `0:0`; no reruns or mechanism changes were made. Smoke confirmed the adapter starts as an exact no-op (`max_abs_delta=0`), with `0` trainable adapter params for `adapter0` and `1,060,993` for `adapter_low`. All four full checkpoints were loaded by the evaluator, enhanced tensors were written under `/src/evals/cycle28_*/*_all_enhancedrecons.pt`, and final CSVs were written under `/src/tables/cycle28_*_all_enhancedrecons.csv`; logs confirm `final_evaluations.py` consumed the enhanced tensors. Final BrainRet deltas were weak/negative: subj05 `adapter_low - adapter0 = +0.003333` and subj07 `-0.003778`, not the required `~+0.02`. Protected metrics also regressed for subj05 (CLIP `-0.004438`, Inception `-0.010118`, VC `-0.005919`, HigherVis `-0.006560`, distances worse) and subj07 had worse Inception and distances plus lower HigherVis. Decision: close this exact small zero-initialized residual adapter as negative; next discussion should consider an explicit cross-subject functional-alignment objective rather than widening adapter grids.
