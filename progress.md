@@ -2318,3 +2318,55 @@ Recommended next research questions:
 - Do evaluator logs confirm `final_evaluations.py` consumed each enhanced tensor via the `all_recons_path` line?
 - Do refined `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
 - If refined metrics mirror the training-log retrieval collapse, close this distributional functional-alignment attempt as coarse global matching without preserved instance-level functional geometry.
+
+## Cycle 34 - 2026-05-28
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Scope remained limited to the already-trained Cycle 30 distributional functional-alignment experiment. No training rerun, modeling branch, grid, adapter, refiner/generator change, evaluator change, or duplicate evaluator was launched.
+
+Code/config changes:
+- None.
+
+Commands run:
+- `squeue -j 8867096 -o '%i|%T|%M|%D|%R|%N'`
+- `sacct -j 8867096 --format=JobIDRaw,JobName%40,State,ExitCode,Elapsed,NodeList,MaxRSS,ReqMem,AllocTRES%80 -P`
+- `scontrol show job 8867096_0`, `_1`, `_2`, and `_3`
+- Inspected `/src/cycle30_align_eval_s57.slurm`, `/src/slurms`, `/src/train_logs`, `/src/evals`, `/src/tables`, and the expected `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/...` paths from the container.
+- Loaded `/src/tables/cycle30_subj05_clip_train_stats.pt` and `/src/tables/cycle30_subj07_clip_train_stats.pt` with `/src/fmri/bin/python` and `torch.load(..., map_location='cpu')`.
+
+Scheduler/accounting readout for evaluator `8867096_[0-3]`:
+- `8867096_0` / `cycle30_subj05_align0_1sess_150ep`: `PENDING`, reason `Priority`, dependency `(null)`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:00:00`, projected start `2026-05-28T13:56:37`, scheduled node `della-l04g2`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_0.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_0.err`, MaxRSS unavailable while pending, failure class none yet.
+- `8867096_1` / `cycle30_subj05_align_low_1sess_150ep`: `PENDING`, reason `Priority`, dependency `(null)`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:00:00`, projected start `2026-05-28T13:56:37`, scheduled node `della-l04g8`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_1.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_1.err`, MaxRSS unavailable while pending, failure class none yet.
+- `8867096_2` / `cycle30_subj07_align0_1sess_150ep`: `PENDING`, reason `Priority`, dependency `(null)`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:00:00`, projected start `2026-05-28T13:57:07`, scheduled node `della-l04g6`, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_2.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_2.err`, MaxRSS unavailable while pending, failure class none yet.
+- `8867096_3` / `cycle30_subj07_align_low_1sess_150ep`: `PENDING`, reason `Priority`, dependency `(null)`, exit `0:0`, elapsed `00:00:00`, requested `64G`, time limit `04:00:00`, projected start unknown, no scheduled node yet, stdout `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_3.out`, stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/c30_align_eval_s57_8867096_3.err`, MaxRSS unavailable while pending, failure class none yet.
+
+Checkpoint and artifact validation:
+- The evaluator script remains pointed at the exact four active rows and checks `../train_logs/${MODEL_NAME}/last.pth` on the compute-visible `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` working tree before running the unchanged path: `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` with `--all_recons_path=evals/${MODEL_NAME}/${MODEL_NAME}_all_enhancedrecons.pt`.
+- From this container, `/scratch` is not mounted, so direct `ls` of `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_*/last.pth` reports `No such file or directory`. This is a container mount-visibility limitation already seen in Cycle 33, not evidence of checkpoint loss. The training logs under `/src/slurms/c30_align_s57_8867095_{0,1,2,3}.out` still show the exact model names, official subject-specific multisubject checkpoint loads, functional-alignment reference initialization, and reliability summaries written under the compute-visible `/scratch/gpfs/.../train_logs/cycle30_*` directories.
+- No local enhanced tensors or final CSVs exist yet for the four Cycle 30 rows under `/src/evals` or `/src/tables`, and no evaluator stdout/stderr files for `8867096_[0-3]` exist yet. This is expected while the evaluator array remains pending and has not started.
+
+Stats provenance preserved:
+- Subject 5 stats: `/src/tables/cycle30_subj05_clip_train_stats.pt`, size `11084456` bytes; train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj05/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `count=600`; `unique_image_count=482`; `skipped_duplicate_batches=4`; dtype `torch.float32`; mean shape `(1664,)`; covariance shape `(1664, 1664)`; mean norm `21.957136`; covariance norm `24.123350`; covariance diagonal range `0.000757-7.141074`.
+- Subject 7 stats: `/src/tables/cycle30_subj07_clip_train_stats.pt`, size `11084456` bytes; train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj07/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `count=600`; `unique_image_count=482`; `skipped_duplicate_batches=4`; dtype `torch.float32`; mean shape `(1664,)`; covariance shape `(1664, 1664)`; mean norm `22.037144`; covariance norm `23.991619`; covariance diagonal range `0.000878-6.695669`.
+
+Required refined metric table:
+- Not available yet. `8867096_[0-3]` has not started, so the enhanced tensors and final CSVs do not yet exist for:
+  - `cycle30_subj05_align0_1sess_150ep`
+  - `cycle30_subj05_align_low_1sess_150ep`
+  - `cycle30_subj07_align0_1sess_150ep`
+  - `cycle30_subj07_align_low_1sess_150ep`
+- Same-subject `align_low - align0` deltas for subject 5 and subject 7 cannot be computed until those CSVs exist and evaluator logs confirm `final_evaluations.py` consumed each enhanced tensor via the `all_recons_path` line.
+
+Recovery/rerun actions:
+- None. The evaluator is dependency-cleared, pending for priority, and recoverable. Launching a duplicate evaluator would violate the plan while `8867096_[0-3]` remains alive with no failure evidence.
+- If a row later fails operationally, recover only that exact evaluator row with unchanged subject, model name, checkpoint, refiner, evaluator, and retrieval pool. If a checkpoint exists but a CSV is missing after `8867096_[0-3]` resolves, rerun only the validated enhanced evaluator path for that exact model name.
+
+Decision:
+- Cycle 34 remains operationally incomplete because the scheduler has not started the evaluator rows. The Cycle 30 training chain is still the active experiment, and no scientific pass/fail decision is possible without the enhanced-evaluator CSVs.
+- The immediate next valid action is to wait for `8867096_[0-3]` to run, parse its stdout/stderr and accounting, verify enhanced tensors and final CSVs, then compute the full refined table and same-subject deltas required by `/plan.md`.
+
+Recommended next research questions:
+- Did `8867096_[0-3]` start at or after the projected `2026-05-28T13:56` window and find all four compute-visible checkpoints?
+- Do evaluator logs confirm the unchanged path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` and `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` for each row?
+- Once CSVs exist, do refined `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
