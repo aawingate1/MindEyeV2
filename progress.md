@@ -2090,3 +2090,63 @@ Recommended next research questions:
 
 Telegram-ready update:
 Cycle 29 recovered the exact Cycle 28 adapter chain. Smoke `8728063_[0-1]`, full training `8728064_[0-3]`, and evaluation `8728065_[0-3]` all completed with exit `0:0`; no reruns or mechanism changes were made. Smoke confirmed the adapter starts as an exact no-op (`max_abs_delta=0`), with `0` trainable adapter params for `adapter0` and `1,060,993` for `adapter_low`. All four full checkpoints were loaded by the evaluator, enhanced tensors were written under `/src/evals/cycle28_*/*_all_enhancedrecons.pt`, and final CSVs were written under `/src/tables/cycle28_*_all_enhancedrecons.csv`; logs confirm `final_evaluations.py` consumed the enhanced tensors. Final BrainRet deltas were weak/negative: subj05 `adapter_low - adapter0 = +0.003333` and subj07 `-0.003778`, not the required `~+0.02`. Protected metrics also regressed for subj05 (CLIP `-0.004438`, Inception `-0.010118`, VC `-0.005919`, HigherVis `-0.006560`, distances worse) and subj07 had worse Inception and distances plus lower HigherVis. Decision: close this exact small zero-initialized residual adapter as negative; next discussion should consider an explicit cross-subject functional-alignment objective rather than widening adapter grids.
+
+## Cycle 30 - 2026-05-28
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Closed the Cycle 28/29 residual-adapter experiment as negative before starting the new functional-alignment work.
+
+Cycle 28/29 residual-adapter closure:
+- Smoke `8728063_[0-1]`, training `8728064_[0-3]`, and evaluation `8728065_[0-3]` all completed with exit `0:0`.
+- Enhanced tensors and final CSVs exist for `cycle28_subj05_adapter0_1sess_150ep`, `cycle28_subj05_adapter_low_1sess_150ep`, `cycle28_subj07_adapter0_1sess_150ep`, and `cycle28_subj07_adapter_low_1sess_150ep`.
+- Same-subject `adapter_low - adapter0` BrainRet deltas were subj05 `+0.003333` and subj07 `-0.003778`, failing the required about `+0.02` gain.
+- Protected metrics regressed: subj05 lost CLIP, Inception, VC, HigherVis, and worsened EffNet/SwAV distances; subj07 lost BrainRet and worsened Inception, EffNet/SwAV distances, and HigherVis. This exact small residual adapter setting is closed as negative.
+
+Code/config changes:
+- Added disabled-by-default functional-alignment CLI flags to `/src/Train.py`: `--use_functional_alignment`, `--functional_alignment_weight`, `--functional_alignment_site`, and `--functional_alignment_stats_path`.
+- Implemented Cycle 30 alignment at the predicted CLIP boundary. The loss mean-pools predicted CLIP tokens, then applies a mean-plus-covariance distribution match against frozen reference statistics. `align0` uses the same code path and logs the same quantities with `functional_alignment_weight=0.0`; `align_low` uses one conservative nonzero weight, `0.05`.
+- Added train/test logging for functional-alignment loss, scaled loss, mean loss, covariance loss, mean distance, and covariance distance.
+- Added `/src/cycle30_build_alignment_stats.py` to build training-only reference statistics from one-session training WebDataset shards and `coco_images_224_float16.hdf5`. The script records `training_only=True`, the exact train URL, sample count, dtype/shape, covariance diagnostics, and `shared1000_or_new_test_used=False`.
+- Added Slurm scripts:
+  - `/src/cycle30_align_smoke.slurm`: 1-hour subject 7 smoke array for `align0` and `align_low`, 3 epochs, A100 `gpu80`, batch size 24.
+  - `/src/cycle30_align_train_s57.slurm`: full exact four-row training array for subjects 5/7 and `align0`/`align_low`.
+  - `/src/cycle30_align_eval_s57.slurm`: full evaluator array using the unchanged `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` path.
+- No inference-time model structure was added, so `/src/recon_inference.py` did not need new alignment flags.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/Train.py /src/cycle30_build_alignment_stats.py /src/recon_inference.py /src/enhanced_recon_inference.py /src/final_evaluations.py` passed.
+- `bash -n /src/cycle30_align_smoke.slurm /src/cycle30_align_train_s57.slurm /src/cycle30_align_eval_s57.slurm` passed.
+
+Commands/jobs launched:
+- `sbatch /src/cycle30_align_smoke.slurm` -> job `8866561_[0-1]`.
+- Smoke rows queued:
+  - task 0: `cycle30_smoke_subj07_align0_1sess_3ep`, `functional_alignment_weight=0.0`, stats path `/src/tables/cycle30_subj07_clip_train_stats.pt` on the submit-side path and `${SRC_DIR}/tables/cycle30_subj07_clip_train_stats.pt` on compute.
+  - task 1: `cycle30_smoke_subj07_align_low_1sess_3ep`, `functional_alignment_weight=0.05`, same training-only stats path.
+- First scheduler check: `8866561_0` and `8866561_1` were both `PENDING`, elapsed `00:00:00`, time limit `01:00:00`, no node assigned. `sacct` also showed pending state for the array.
+
+Observed metrics/results:
+- No Cycle 30 smoke metrics, checkpoints, or alignment-stat files were available at this writeout because the smoke array had not started.
+- Full training and evaluator arrays were intentionally not submitted yet. Per `/plan.md`, continue to full training only after both smoke rows load official checkpoints, compute/log alignment losses, complete backward, and save checkpoints without protocol changes.
+
+Current artifact expectations:
+- If the smoke starts, it should first build `/src/tables/cycle30_subj07_clip_train_stats.pt` from only `wds/subj07/train/{0..0}.tar` and log shape, dtype, sample count, mean norm, covariance norm, and no test-set use.
+- Expected smoke checkpoints, if successful, are under `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_smoke_subj07_align{0,_low}_1sess_3ep/last.pth`.
+
+Recommended next research questions:
+- Did `8866561_[0-1]` start, build training-only CLIP stats, load the official subject-7 multisubject checkpoint, log non-NaN train/test functional-alignment losses and distances, complete backward, and save both smoke checkpoints?
+- If both smoke rows pass, submit `/src/cycle30_align_train_s57.slurm` for the exact four planned rows, then the dependent `/src/cycle30_align_eval_s57.slurm` only after training succeeds.
+- If either smoke row fails, recover only the exact failed smoke row with unchanged subject, split, batch size, hidden dim, epoch count, initialization, refiner/evaluator path, and retrieval pool.
+
+Cycle 30 smoke completion and full-array launch update:
+- Smoke `8866561_[0-1]` completed successfully, exit `0:0`, node `della-l08g6`, elapsed `00:08:04` for both rows.
+  - `8866561_0` `cycle30_smoke_subj07_align0_1sess_3ep`: batch MaxRSS `21547564K`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_smoke_subj07_align0_1sess_3ep/last.pth`.
+  - `8866561_1` `cycle30_smoke_subj07_align_low_1sess_3ep`: batch MaxRSS `21537520K`; checkpoint saved to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_smoke_subj07_align_low_1sess_3ep/last.pth`.
+- Training-only reference statistics were built and verified at `/src/tables/cycle30_subj07_clip_train_stats.pt` / compute path `${SRC_DIR}/tables/cycle30_subj07_clip_train_stats.pt`: train URL `wds/subj07/train/{0..0}.tar`, `training_only=True`, `test_sources_used=[]`, `shared1000_or_new_test_used=False`, `count=600`, mean shape `[1664]`, covariance shape `[1664, 1664]`, dtype `torch.float32`, mean norm `22.0371`, covariance norm `23.9916`, covariance diagonal range `0.000878-6.695669`.
+- Both smoke rows loaded `/src/train_logs/final_multisubject_subj07/last.pth`, initialized the CLIP-site alignment reference, completed backward/optimizer steps, logged finite train/test alignment losses, and saved checkpoints without changing batch size or protocol.
+- Final 3-epoch smoke diagnostics from logs:
+  - `align0`: test loss `13.4`, blurry PixCorr `0.196`, test fwd/bwd `0.427/0.267`; train loss `11.5`, train blurry PixCorr `0.286`, train fwd/bwd `0.976/0.966`; train functional-alignment loss `0.307`, scaled `0.0000`, mean distance `22.6`, covariance distance `33.0`; test functional-alignment loss `0.296`, mean distance `22.2`, covariance distance `24.5`.
+  - `align_low`: test loss `13.4`, blurry PixCorr `0.197`, test fwd/bwd `0.423/0.273`; train loss `11.5`, train blurry PixCorr `0.286`, train fwd/bwd `0.976/0.966`; train functional-alignment loss `0.301`, scaled `0.0151`, mean distance `22.4`, covariance distance `32.9`; test functional-alignment loss `0.290`, mean distance `21.9`, covariance distance `24.5`.
+- Because the smoke gate passed, launched full training: `sbatch /src/cycle30_align_train_s57.slurm` -> job `8867095_[0-3]` for exactly `cycle30_subj05_align0_1sess_150ep`, `cycle30_subj05_align_low_1sess_150ep`, `cycle30_subj07_align0_1sess_150ep`, and `cycle30_subj07_align_low_1sess_150ep`.
+- Launched dependent evaluator: `sbatch --dependency=afterok:8867095 /src/cycle30_align_eval_s57.slurm` -> job `8867096_[0-3]` using the unchanged enhanced path.
+- Scheduler state after submission: `8867095_[0-3]` pending with `04:30:00`, no node assigned; `8867096_[0-3]` pending on dependency with `04:00:00`, no node assigned.

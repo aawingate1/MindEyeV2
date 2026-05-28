@@ -287,6 +287,22 @@ parser.add_argument(
     "--freeze_subject_adapter", action=argparse.BooleanOptionalAction, default=False,
     help="Freeze the subject adapter for same-code no-effect controls.",
 )
+parser.add_argument(
+    "--use_functional_alignment", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable functional-distribution alignment loss. Default False preserves baseline behavior.",
+)
+parser.add_argument(
+    "--functional_alignment_weight", type=float, default=0.0,
+    help="Weight for the functional alignment loss. Use 0 for same-code logging controls.",
+)
+parser.add_argument(
+    "--functional_alignment_site", type=str, default="clip", choices=["clip"],
+    help="Representation boundary for functional alignment. Cycle 30 supports predicted CLIP pooled tokens.",
+)
+parser.add_argument(
+    "--functional_alignment_stats_path", type=str, default=None,
+    help="Path to training-only reference statistics built by cycle30_build_alignment_stats.py.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -931,6 +947,54 @@ def relational_target_from_clip(clip_target_norm, perm=None, betas=None, select=
     rel_target[select] = nn.functional.normalize(mixed[select], dim=-1)
     return rel_target
 
+def load_functional_alignment_stats(path, site):
+    if path is None:
+        raise ValueError("--functional_alignment_stats_path is required with --use_functional_alignment")
+    payload = torch.load(path, map_location="cpu")
+    if not isinstance(payload, dict):
+        raise ValueError(f"Functional alignment stats at {path} must be a dict")
+    if payload.get("site") != site:
+        raise ValueError(f"Functional alignment site mismatch: stats={payload.get('site')} args={site}")
+    if not payload.get("training_only", False):
+        raise ValueError(f"Functional alignment stats at {path} are not marked training_only=True")
+    if "mean" not in payload or "cov" not in payload:
+        raise ValueError(f"Functional alignment stats at {path} must contain mean and cov tensors")
+    stats = {
+        "mean": payload["mean"].float(),
+        "cov": payload["cov"].float(),
+        "count": int(payload.get("count", -1)),
+        "source": payload.get("source", "unknown"),
+        "path": path,
+        "site": site,
+        "training_only": bool(payload.get("training_only", False)),
+    }
+    if stats["mean"].ndim != 1 or stats["cov"].ndim != 2 or stats["cov"].shape[0] != stats["cov"].shape[1]:
+        raise ValueError(f"Invalid functional alignment shapes: mean={tuple(stats['mean'].shape)} cov={tuple(stats['cov'].shape)}")
+    if stats["mean"].shape[0] != stats["cov"].shape[0]:
+        raise ValueError(f"Functional alignment mean/cov dimension mismatch: {stats['mean'].shape[0]} vs {stats['cov'].shape[0]}")
+    return stats
+
+def covariance_matrix(features):
+    features = features.float()
+    centered = features - features.mean(dim=0, keepdim=True)
+    denom = max(1, features.shape[0] - 1)
+    return centered.T @ centered / denom
+
+def functional_alignment_stats(pred_clip, ref_mean, ref_cov):
+    if pred_clip.ndim != 3:
+        raise ValueError(f"Expected predicted CLIP tokens [batch, tokens, dim], got {tuple(pred_clip.shape)}")
+    features = pred_clip.float().mean(dim=1)
+    batch_mean = features.mean(dim=0)
+    batch_cov = covariance_matrix(features)
+    ref_mean = ref_mean.to(features.device, dtype=torch.float32)
+    ref_cov = ref_cov.to(features.device, dtype=torch.float32)
+    mean_loss = torch.mean((batch_mean - ref_mean) ** 2)
+    cov_loss = torch.mean((batch_cov - ref_cov) ** 2)
+    align_loss = mean_loss + cov_loss
+    mean_dist = torch.linalg.vector_norm(batch_mean - ref_mean)
+    cov_dist = torch.linalg.matrix_norm(batch_cov - ref_cov)
+    return align_loss, mean_loss, cov_loss, mean_dist, cov_dist
+
 print("\nDone with model preparations!")
 num_params = utils.count_params(model)
 
@@ -969,6 +1033,10 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "rel_lambda": rel_lambda,
       "rel_target": rel_target,
       "rel_metric": rel_metric,
+      "use_functional_alignment": use_functional_alignment,
+      "functional_alignment_weight": functional_alignment_weight,
+      "functional_alignment_site": functional_alignment_site,
+      "functional_alignment_stats_path": functional_alignment_stats_path,
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -1040,6 +1108,25 @@ if proj_reg_lambda > 0:
     if len(proj_reg_state) == 0:
         raise ValueError(f"--proj_reg_lambda > 0 but --proj_reg_modules={proj_reg_modules!r} matched no trainable parameters")
 
+functional_alignment_reference = None
+if use_functional_alignment:
+    functional_alignment_reference = load_functional_alignment_stats(
+        functional_alignment_stats_path,
+        functional_alignment_site,
+    )
+    print(
+        "Functional alignment enabled: "
+        f"site={functional_alignment_site}, weight={functional_alignment_weight}, "
+        f"path={functional_alignment_reference['path']}, count={functional_alignment_reference['count']}, "
+        f"training_only={functional_alignment_reference['training_only']}, "
+        f"source={functional_alignment_reference['source']}"
+    )
+    print(
+        "Functional alignment reference shapes: "
+        f"mean={tuple(functional_alignment_reference['mean'].shape)}, "
+        f"cov={tuple(functional_alignment_reference['cov'].shape)}"
+    )
+
 
 # In[19]:
 
@@ -1055,6 +1142,9 @@ if adapter_prior_ridge is not None:
     adapter_prior_ridge = adapter_prior_ridge.to(device)
 if proj_reg_state is not None:
     proj_reg_state = move_proj_reg_state_to_device(proj_reg_state, device)
+if functional_alignment_reference is not None:
+    functional_alignment_reference["mean"] = functional_alignment_reference["mean"].to(device)
+    functional_alignment_reference["cov"] = functional_alignment_reference["cov"].to(device)
 
 
 # In[20]:
@@ -1100,6 +1190,19 @@ for epoch in progress_bar:
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
+    align_loss_total = 0.
+    align_loss_scaled_total = 0.
+    align_mean_loss_total = 0.
+    align_cov_loss_total = 0.
+    align_mean_dist_total = 0.
+    align_cov_dist_total = 0.
+    align_logged_steps = 0
+    test_align_loss_total = 0.
+    test_align_mean_loss_total = 0.
+    test_align_cov_loss_total = 0.
+    test_align_mean_dist_total = 0.
+    test_align_cov_dist_total = 0.
+    test_align_logged_steps = 0
     reldrop_stats_total = {}
     reldrop_stats_steps = 0
 
@@ -1213,6 +1316,22 @@ for epoch in progress_bar:
                 proj_reg_logged_steps += 1
 
             backbone, clip_voxels, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
+
+            if use_functional_alignment:
+                align_loss, align_mean_loss, align_cov_loss, align_mean_dist, align_cov_dist = functional_alignment_stats(
+                    clip_voxels,
+                    functional_alignment_reference["mean"],
+                    functional_alignment_reference["cov"],
+                )
+                align_loss_scaled = align_loss * functional_alignment_weight
+                loss += align_loss_scaled
+                align_loss_total += align_loss.detach().float().item()
+                align_loss_scaled_total += align_loss_scaled.detach().float().item()
+                align_mean_loss_total += align_mean_loss.detach().float().item()
+                align_cov_loss_total += align_cov_loss.detach().float().item()
+                align_mean_dist_total += align_mean_dist.detach().float().item()
+                align_cov_dist_total += align_cov_dist.detach().float().item()
+                align_logged_steps += 1
 
             if clip_scale>0 or relational_consistency:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
@@ -1375,6 +1494,19 @@ for epoch in progress_bar:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                     clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
+                if use_functional_alignment:
+                    test_align_loss, test_align_mean_loss, test_align_cov_loss, test_align_mean_dist, test_align_cov_dist = functional_alignment_stats(
+                        clip_voxels,
+                        functional_alignment_reference["mean"],
+                        functional_alignment_reference["cov"],
+                    )
+                    test_align_loss_total += test_align_loss.detach().float().item()
+                    test_align_mean_loss_total += test_align_mean_loss.detach().float().item()
+                    test_align_cov_loss_total += test_align_cov_loss.detach().float().item()
+                    test_align_mean_dist_total += test_align_mean_dist.detach().float().item()
+                    test_align_cov_dist_total += test_align_cov_dist.detach().float().item()
+                    test_align_logged_steps += 1
+
                 # for some evals, only doing a subset of the samples per batch because of computational cost
                 random_samps = np.random.choice(np.arange(len(image)), size=len(image)//5, replace=False)
 
@@ -1456,6 +1588,17 @@ for epoch in progress_bar:
                 "train/rel_sim_corr": rel_sim_corr_total / max(1, rel_logged_steps),
                 "test/rel_loss": test_rel_loss_total / max(1, test_rel_logged_steps),
                 "test/rel_sim_corr": test_rel_sim_corr_total / max(1, test_rel_logged_steps),
+                "train/functional_alignment_loss": align_loss_total / max(1, align_logged_steps),
+                "train/functional_alignment_loss_scaled": align_loss_scaled_total / max(1, align_logged_steps),
+                "train/functional_alignment_mean_loss": align_mean_loss_total / max(1, align_logged_steps),
+                "train/functional_alignment_cov_loss": align_cov_loss_total / max(1, align_logged_steps),
+                "train/functional_alignment_mean_dist": align_mean_dist_total / max(1, align_logged_steps),
+                "train/functional_alignment_cov_dist": align_cov_dist_total / max(1, align_logged_steps),
+                "test/functional_alignment_loss": test_align_loss_total / max(1, test_align_logged_steps),
+                "test/functional_alignment_mean_loss": test_align_mean_loss_total / max(1, test_align_logged_steps),
+                "test/functional_alignment_cov_loss": test_align_cov_loss_total / max(1, test_align_logged_steps),
+                "test/functional_alignment_mean_dist": test_align_mean_dist_total / max(1, test_align_logged_steps),
+                "test/functional_alignment_cov_dist": test_align_cov_dist_total / max(1, test_align_logged_steps),
                 }
             for k, v in reldrop_stats_total.items():
                 logs[f"train/reldrop_{k}"] = v / max(1, reldrop_stats_steps)
