@@ -3,6 +3,7 @@ train_logs/
 slurms/
 cs-agent/plan.md.next
 job-status.md
+src/tables/cycle38_neighbor_diagnostics/all_images_openclip_bigG_flat_norm.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

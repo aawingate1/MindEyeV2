@@ -2622,3 +2622,73 @@ Current status and next checks:
 - Final decision for Cycle 37: no new jobs launched; arrays `8918443_[0-3]` and `8918444_[0-3]` completed cleanly; all enhanced tensors and CSVs were authenticated.
 - Primary result: `topo_low - topo0` BrainRet failed on both protected subjects: subj05 `-0.027111`, subj07 `-0.049556`. ImageRet was preserved, but higher-visual and several perceptual metrics regressed.
 - Conclusion: close this exact full-pairwise batch-local cosine-MSE topology loss as mechanistically informative but practically insufficient. The only adjacent next branch worth considering is a sharper local-neighborhood objective on subjects 5 and 7, such as teacher-neighbor-weighted pairwise loss or soft nearest-neighbor KL.
+
+## Cycle 38 - 2026-05-29
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- `/job-status.md` did not produce active-job content in this container, and `squeue -u $USER` initially showed no active Slurm jobs.
+
+Code/config changes:
+- Added `/src/cycle38_neighbor_diagnostics.py` for Phase 1 post-hoc Cycle 36 diagnostics. It recomputes frozen OpenCLIP-bigG image features for the 1000 held-out evaluator images, reads saved Cycle 36 `all_clipvoxels`, enhanced reconstructions, blurry reconstructions, and new-test image IDs, and writes per-image rank/PixCorr/teacher-neighbor diagnostics under `/src/tables/cycle38_neighbor_diagnostics/`.
+- Patched `/src/Train.py` with disabled-by-default sparse teacher-neighbor topology flags:
+  - `--use_clip_neighbor_topology`, default `False`
+  - `--clip_neighbor_weight`, default `0.0`
+  - `--clip_neighbor_k`, default `5`
+  - `--clip_neighbor_teacher_temp`, default `0.07`
+  - `--clip_neighbor_student_temp`, default `0.07`
+  - `--clip_neighbor_pool`, default `flat`, matching the Cycle 36 flattened predicted/image CLIP representation.
+- The sparse-neighbor loss normalizes predicted CLIP and frozen image-CLIP batch features, excludes self-pairs, selects each sample's top-`k` frozen image-CLIP teacher neighbors within the current training batch, and applies cross-entropy from the frozen teacher top-`k` distribution to the student distribution over the same candidates. The term is added only when `--use_clip_neighbor_topology` is set.
+- Added explicit provenance logging for the training loss: `training_only=True`, `shared1000_or_new_test_used=False`, and `test_sources_used=[]`.
+- Added logs for raw/scaled neighbor loss, teacher top-k, teacher/student temperatures, NN@1/5/10 overlap, teacher-top1 median rank, and MRR.
+- Added `/src/cycle38_neighbor_diagnostic.slurm`, `/src/cycle38_neighbor_smoke.slurm`, `/src/cycle38_neighbor_train_s57.slurm`, and `/src/cycle38_neighbor_eval_s57.slurm`.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/Train.py /src/cycle38_neighbor_diagnostics.py` passed.
+- `bash -n /src/cycle38_neighbor_diagnostic.slurm /src/cycle38_neighbor_smoke.slurm /src/cycle38_neighbor_train_s57.slurm /src/cycle38_neighbor_eval_s57.slurm` passed.
+
+Phase 1 Cycle 36 diagnostics:
+- Submitted `sbatch /src/cycle38_neighbor_diagnostic.slurm` -> job `8935815`.
+- Job `8935815` completed `0:0`, elapsed `00:04:01`, node `della-l09g5`, requested `64G`, time limit `01:00:00`, batch MaxRSS `21176740K`, stdout `/src/slurms/c38_neighbor_diag_8935815.out`, stderr `/src/slurms/c38_neighbor_diag_8935815.err`.
+- Diagnostic outputs:
+  - `/src/tables/cycle38_neighbor_diagnostics/all_images_openclip_bigG_flat_norm.pt`
+  - `/src/tables/cycle38_neighbor_diagnostics/subj05_topo_low_vs_topo0_per_image.csv`
+  - `/src/tables/cycle38_neighbor_diagnostics/subj07_topo_low_vs_topo0_per_image.csv`
+  - `/src/tables/cycle38_neighbor_diagnostics/cycle38_neighbor_diagnostics_summary.json`
+- Subject 5 deterministic per-image diagnostic, `topo_low - topo0`: mean brain-rank delta `-0.695`, median `0`, brain-rank worsened for `24.4%` of images and improved for `24.3%`; mean image-rank delta `+2.110`, median `0`; `119` images preserved or improved image rank while worsening brain rank; mean teacher-top1 rank delta `-9.541`; mean teacher-neighbor overlap@5 delta `+0.0078`; mean PixCorr delta `+0.004930`.
+- Subject 7 deterministic per-image diagnostic, `topo_low - topo0`: mean brain-rank delta `-0.283`, median `0`, brain-rank worsened for `20.5%` of images and improved for `22.4%`; mean image-rank delta `+4.587`, median `0`; `80` images preserved or improved image rank while worsening brain rank; mean teacher-top1 rank delta `-14.755`; mean teacher-neighbor overlap@5 delta `+0.0020`; mean PixCorr delta `+0.003044`.
+- Worst brain-rank regression examples:
+  - subj05: eval/image IDs `(52, 5602, +103 brain rank, +9 image rank)`, `(878, 64096, +70, +121)`, `(136, 11635, +67, +86)`, `(726, 53052, +65, +18)`, `(316, 25091, +65, +4)`.
+  - subj07: eval/image IDs `(32, 4667, +218 brain rank, +5 image rank)`, `(858, 62275, +150, +332)`, `(850, 61801, +138, +126)`, `(571, 42946, +98, +29)`, `(170, 14179, +89, +75)`.
+- Interpretation: deterministic full-pool ranks are mixed around a median of zero, but BrainRet regressions are not confined to a single tiny subset: roughly one-fifth to one-quarter of images worsen, and there is a stress subset where ImageRet is preserved or improved while BrainRet worsens. Teacher-neighbor rank/overlap diagnostics improve on average, matching Cycle 36's mechanism mismatch. Proceeded to Phase 2.
+- Limitation: per-image VC/V1-V4/HigherVis correlations are not saved by `final_evaluations.py`; recovering them would require rerunning the GNet encoder and storing voxelwise/per-image correlations. The current diagnostic records PixCorr and CLIP-rank/neighborhood diagnostics.
+
+Phase 2 sparse-neighbor smoke:
+- Submitted `sbatch /src/cycle38_neighbor_smoke.slurm` -> array `8935931_[0-1]`.
+- `8935931_0` / `cycle38_smoke_subj07_neighbor0_1sess_3ep`: completed `0:0`, elapsed `00:05:18`, node `della-l09g5`, requested `64G`, time limit `01:00:00`, batch MaxRSS `21449752K`, stdout `/src/slurms/c38_neighbor_smoke_8935931_0.out`, stderr `/src/slurms/c38_neighbor_smoke_8935931_0.err`.
+- `8935931_1` / `cycle38_smoke_subj07_neighbor_low_1sess_3ep`: completed `0:0`, elapsed `00:05:18`, node `della-l09g5`, requested `64G`, time limit `01:00:00`, batch MaxRSS `21449704K`, stdout `/src/slurms/c38_neighbor_smoke_8935931_1.out`, stderr `/src/slurms/c38_neighbor_smoke_8935931_1.err`.
+- Both smoke rows loaded `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj07/last.pth` and logged sparse-neighbor provenance: `training_only=True`, `shared1000_or_new_test_used=False`, `test_sources_used=[]`.
+- `neighbor0` final smoke diagnostics: test loss `13.4`, test blurry PixCorr `0.196`, test fwd/bwd retrieval `0.427/0.267`, train neighbor loss `3.07`, train scaled neighbor loss exactly `0`, test neighbor loss `2.11`, test overlap@1/5/10 `0.040/0.094/0.135`, teacher-top1 median rank `41`, MRR `0.102`.
+- `neighbor_low` final smoke diagnostics: test loss `13.4`, test blurry PixCorr `0.196`, test fwd/bwd retrieval `0.423/0.267`, train neighbor loss `3.06`, train scaled neighbor loss `0.00306`, test neighbor loss `2.11`, test overlap@1/5/10 `0.040/0.094/0.136`, teacher-top1 median rank `40`, MRR `0.103`.
+- Smoke decision: passed. Zero-control contribution was exactly zero; nonzero row had finite low-magnitude contribution; losses were finite; no shape/device errors occurred; memory remained in the prior safe range.
+
+Full Phase 3 jobs launched:
+- Submitted `sbatch /src/cycle38_neighbor_train_s57.slurm` -> `8936092_[0-3]`, requested one A100, `64G`, `04:30:00`.
+  - `8936092_0`: `cycle38_subj05_neighbor0_1sess_150ep`
+  - `8936092_1`: `cycle38_subj05_neighbor_low_1sess_150ep`
+  - `8936092_2`: `cycle38_subj07_neighbor0_1sess_150ep`
+  - `8936092_3`: `cycle38_subj07_neighbor_low_1sess_150ep`
+- Submitted dependent evaluator `sbatch --dependency=afterok:8936092 /src/cycle38_neighbor_eval_s57.slurm` -> `8936093_[0-3]`, requested one A100, `64G`, `04:00:00`.
+- At write time, `8936092_[0-3]` were `PENDING`, and `8936093_[0-3]` were `PENDING (Dependency)`.
+- Expected checkpoints: `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep/last.pth`.
+- Expected enhanced tensors: `/src/evals/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep_all_enhancedrecons.pt`.
+- Expected final CSVs: `/src/tables/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+
+Conclusions:
+- Cycle 36 full-pairwise topology remains closed as a negative primary result. Cycle 38's diagnostic supports the sparse-neighbor branch as the narrow adjacent test: local teacher-neighbor diagnostics improved despite refined BrainRet failure, while the damaging BrainRet changes affect a broad enough image subset to justify a local-rank objective.
+- The sparse-neighbor implementation passed syntax checks and the required 3-epoch smoke gate. Full protected subject 5/7 rows and dependent evaluator are queued, not completed.
+
+Recommended next research questions:
+- Do `8936092_[0-3]` complete with finite neighbor diagnostics and no operational failures?
+- Does `neighbor_low - neighbor0` improve refined BrainRet by about `+0.02` in at least one weak subject while preserving ImageRet, CLIP, Inception, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
+- If refined BrainRet still fails despite improved neighbor diagnostics, close this sparse local-neighborhood family rather than widening to weight grids or architecture changes.

@@ -319,6 +319,30 @@ parser.add_argument(
     "--clip_topo_center", action=argparse.BooleanOptionalAction, default=True,
     help="Row-center off-diagonal similarity matrices before topology MSE/correlation.",
 )
+parser.add_argument(
+    "--use_clip_neighbor_topology", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable sparse teacher-neighbor predicted/image CLIP topology loss. Default False preserves baseline behavior.",
+)
+parser.add_argument(
+    "--clip_neighbor_weight", type=float, default=0.0,
+    help="Weight for the sparse CLIP teacher-neighbor loss. Use 0 for same-code logging controls.",
+)
+parser.add_argument(
+    "--clip_neighbor_k", type=int, default=5,
+    help="Number of frozen image-CLIP teacher neighbors per sample within the training batch.",
+)
+parser.add_argument(
+    "--clip_neighbor_teacher_temp", type=float, default=0.07,
+    help="Temperature for the frozen image-CLIP teacher distribution over top-k batch neighbors.",
+)
+parser.add_argument(
+    "--clip_neighbor_student_temp", type=float, default=0.07,
+    help="Temperature for the predicted-CLIP student distribution over the same teacher top-k neighbors.",
+)
+parser.add_argument(
+    "--clip_neighbor_pool", type=str, default="flat", choices=["flat", "mean"],
+    help="CLIP representation for sparse-neighbor loss. Default flat matches Cycle 36 topology training.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -996,6 +1020,65 @@ def clip_topology_stats(pred_norm, target_norm, temp=0.07, center=True):
         del labels
     return topo_loss, topo_corr, overlap_stats
 
+def clip_neighbor_features(clip_tokens, pool="flat"):
+    if pool == "flat":
+        return clip_tokens.flatten(1)
+    if pool == "mean":
+        if clip_tokens.ndim != 3:
+            raise ValueError(f"Expected CLIP tokens [batch, tokens, dim] for mean pooling, got {tuple(clip_tokens.shape)}")
+        return clip_tokens.mean(dim=1)
+    raise ValueError(f"Unknown clip_neighbor_pool: {pool}")
+
+def clip_neighbor_topology_stats(
+    pred_norm,
+    target_norm,
+    k=5,
+    teacher_temp=0.07,
+    student_temp=0.07,
+):
+    n = pred_norm.shape[0]
+    if n < 2:
+        zero = pred_norm.new_tensor(0.)
+        stats = {
+            "teacher_topk": zero,
+            "teacher_top1_median_rank": zero,
+            "teacher_top1_mrr": zero,
+            "overlap_at_1": zero,
+            "overlap_at_5": zero,
+            "overlap_at_10": zero,
+        }
+        return zero, stats
+
+    kk = min(max(1, int(k)), n - 1)
+    teacher_temp = max(float(teacher_temp), 1e-6)
+    student_temp = max(float(student_temp), 1e-6)
+    eye = torch.eye(n, dtype=torch.bool, device=pred_norm.device)
+    pred_sim = (pred_norm.float() @ pred_norm.float().T).masked_fill(eye, -float("inf"))
+    target_sim = (target_norm.float() @ target_norm.float().T).masked_fill(eye, -float("inf"))
+    teacher_vals, teacher_idx = torch.topk(target_sim, k=kk, dim=1)
+    teacher_probs = torch.softmax(teacher_vals / teacher_temp, dim=1).detach()
+    student_vals = torch.gather(pred_sim, dim=1, index=teacher_idx)
+    student_log_probs = torch.log_softmax(student_vals / student_temp, dim=1)
+    neighbor_loss = -(teacher_probs * student_log_probs).sum(dim=1).mean()
+
+    with torch.no_grad():
+        pred_order = torch.argsort(pred_sim, dim=1, descending=True)
+        teacher_top1 = teacher_idx[:, 0]
+        ranks = (pred_order == teacher_top1[:, None]).float().argmax(dim=1).float() + 1.0
+        stats = {
+            "teacher_topk": pred_norm.new_tensor(float(kk)),
+            "teacher_top1_median_rank": ranks.median(),
+            "teacher_top1_mrr": (1.0 / ranks).mean(),
+        }
+        for topk in (1, 5, 10):
+            pred_kk = min(topk, max(1, n - 1))
+            target_kk = min(topk, max(1, n - 1))
+            pred_top = torch.topk(pred_sim, k=pred_kk, dim=1).indices
+            target_top = torch.topk(target_sim, k=target_kk, dim=1).indices
+            overlap = (pred_top[:, :, None] == target_top[:, None, :]).any(dim=2).float().sum(dim=1) / float(pred_kk)
+            stats[f"overlap_at_{topk}"] = overlap.mean()
+    return neighbor_loss, stats
+
 def relational_target_from_clip(clip_target_norm, perm=None, betas=None, select=None):
     if perm is None or betas is None or select is None:
         return clip_target_norm
@@ -1094,6 +1177,19 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "functional_alignment_weight": functional_alignment_weight,
       "functional_alignment_site": functional_alignment_site,
       "functional_alignment_stats_path": functional_alignment_stats_path,
+      "use_clip_topology": use_clip_topology,
+      "clip_topo_weight": clip_topo_weight,
+      "clip_topo_temp": clip_topo_temp,
+      "clip_topo_center": clip_topo_center,
+      "use_clip_neighbor_topology": use_clip_neighbor_topology,
+      "clip_neighbor_weight": clip_neighbor_weight,
+      "clip_neighbor_k": clip_neighbor_k,
+      "clip_neighbor_teacher_temp": clip_neighbor_teacher_temp,
+      "clip_neighbor_student_temp": clip_neighbor_student_temp,
+      "clip_neighbor_pool": clip_neighbor_pool,
+      "clip_neighbor_training_only": True,
+      "clip_neighbor_shared1000_or_new_test_used": False,
+      "clip_neighbor_test_sources_used": [],
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -1203,6 +1299,15 @@ if functional_alignment_reference is not None:
     functional_alignment_reference["mean"] = functional_alignment_reference["mean"].to(device)
     functional_alignment_reference["cov"] = functional_alignment_reference["cov"].to(device)
 
+if use_clip_neighbor_topology:
+    print(
+        "Sparse CLIP neighbor topology enabled: "
+        f"weight={clip_neighbor_weight}, k={clip_neighbor_k}, "
+        f"teacher_temp={clip_neighbor_teacher_temp}, student_temp={clip_neighbor_student_temp}, "
+        f"pool={clip_neighbor_pool}, training_only=True, "
+        "shared1000_or_new_test_used=False, test_sources_used=[]"
+    )
+
 
 # In[20]:
 
@@ -1253,6 +1358,15 @@ for epoch in progress_bar:
     topo_median_rank_total = 0.
     topo_mrr_total = 0.
     topo_logged_steps = 0
+    neighbor_loss_total = 0.
+    neighbor_loss_scaled_total = 0.
+    neighbor_topk_total = 0.
+    neighbor_overlap1_total = 0.
+    neighbor_overlap5_total = 0.
+    neighbor_overlap10_total = 0.
+    neighbor_median_rank_total = 0.
+    neighbor_mrr_total = 0.
+    neighbor_logged_steps = 0
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
@@ -1264,6 +1378,14 @@ for epoch in progress_bar:
     test_topo_median_rank_total = 0.
     test_topo_mrr_total = 0.
     test_topo_logged_steps = 0
+    test_neighbor_loss_total = 0.
+    test_neighbor_topk_total = 0.
+    test_neighbor_overlap1_total = 0.
+    test_neighbor_overlap5_total = 0.
+    test_neighbor_overlap10_total = 0.
+    test_neighbor_median_rank_total = 0.
+    test_neighbor_mrr_total = 0.
+    test_neighbor_logged_steps = 0
     align_loss_total = 0.
     align_loss_scaled_total = 0.
     align_mean_loss_total = 0.
@@ -1407,7 +1529,7 @@ for epoch in progress_bar:
                 align_cov_dist_total += align_cov_dist.detach().float().item()
                 align_logged_steps += 1
 
-            if clip_scale>0 or relational_consistency or use_clip_topology:
+            if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                 clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
@@ -1452,6 +1574,36 @@ for epoch in progress_bar:
                 topo_median_rank_total += topo_stats["teacher_top1_median_rank"].detach().float().item()
                 topo_mrr_total += topo_stats["teacher_top1_mrr"].detach().float().item()
                 topo_logged_steps += 1
+
+            if use_clip_neighbor_topology:
+                neighbor_pred_norm = nn.functional.normalize(
+                    clip_neighbor_features(clip_voxels, pool=clip_neighbor_pool),
+                    dim=-1,
+                )
+                neighbor_target_norm = nn.functional.normalize(
+                    clip_neighbor_features(clip_target, pool=clip_neighbor_pool),
+                    dim=-1,
+                )
+                if epoch < int(mixup_pct * num_epochs):
+                    neighbor_target_norm = relational_target_from_clip(neighbor_target_norm, perm=perm, betas=betas, select=select)
+                neighbor_loss, neighbor_stats = clip_neighbor_topology_stats(
+                    neighbor_pred_norm,
+                    neighbor_target_norm,
+                    k=clip_neighbor_k,
+                    teacher_temp=clip_neighbor_teacher_temp,
+                    student_temp=clip_neighbor_student_temp,
+                )
+                neighbor_loss_scaled = neighbor_loss * clip_neighbor_weight
+                loss += neighbor_loss_scaled
+                neighbor_loss_total += neighbor_loss.detach().float().item()
+                neighbor_loss_scaled_total += neighbor_loss_scaled.detach().float().item()
+                neighbor_topk_total += neighbor_stats["teacher_topk"].detach().float().item()
+                neighbor_overlap1_total += neighbor_stats["overlap_at_1"].detach().float().item()
+                neighbor_overlap5_total += neighbor_stats["overlap_at_5"].detach().float().item()
+                neighbor_overlap10_total += neighbor_stats["overlap_at_10"].detach().float().item()
+                neighbor_median_rank_total += neighbor_stats["teacher_top1_median_rank"].detach().float().item()
+                neighbor_mrr_total += neighbor_stats["teacher_top1_mrr"].detach().float().item()
+                neighbor_logged_steps += 1
 
             if use_prior:
                 loss_prior, prior_out = model_for_submodules.diffusion_prior(text_embed=backbone, image_embed=clip_target)
@@ -1587,7 +1739,7 @@ for epoch in progress_bar:
                 clip_voxels /= 3
                 backbone /= 3
 
-                if clip_scale>0 or relational_consistency or use_clip_topology:
+                if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                     clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
@@ -1635,6 +1787,31 @@ for epoch in progress_bar:
                     test_topo_median_rank_total += test_topo_stats["teacher_top1_median_rank"].detach().float().item()
                     test_topo_mrr_total += test_topo_stats["teacher_top1_mrr"].detach().float().item()
                     test_topo_logged_steps += 1
+
+                if use_clip_neighbor_topology:
+                    test_neighbor_pred_norm = nn.functional.normalize(
+                        clip_neighbor_features(clip_voxels, pool=clip_neighbor_pool),
+                        dim=-1,
+                    )
+                    test_neighbor_target_norm = nn.functional.normalize(
+                        clip_neighbor_features(clip_target, pool=clip_neighbor_pool),
+                        dim=-1,
+                    )
+                    test_neighbor_loss, test_neighbor_stats = clip_neighbor_topology_stats(
+                        test_neighbor_pred_norm,
+                        test_neighbor_target_norm,
+                        k=clip_neighbor_k,
+                        teacher_temp=clip_neighbor_teacher_temp,
+                        student_temp=clip_neighbor_student_temp,
+                    )
+                    test_neighbor_loss_total += test_neighbor_loss.detach().float().item()
+                    test_neighbor_topk_total += test_neighbor_stats["teacher_topk"].detach().float().item()
+                    test_neighbor_overlap1_total += test_neighbor_stats["overlap_at_1"].detach().float().item()
+                    test_neighbor_overlap5_total += test_neighbor_stats["overlap_at_5"].detach().float().item()
+                    test_neighbor_overlap10_total += test_neighbor_stats["overlap_at_10"].detach().float().item()
+                    test_neighbor_median_rank_total += test_neighbor_stats["teacher_top1_median_rank"].detach().float().item()
+                    test_neighbor_mrr_total += test_neighbor_stats["teacher_top1_mrr"].detach().float().item()
+                    test_neighbor_logged_steps += 1
 
                 if use_prior:
                     loss_prior, contaminated_prior_out = model_for_submodules.diffusion_prior(text_embed=backbone[random_samps], image_embed=clip_target[random_samps])
@@ -1716,6 +1893,25 @@ for epoch in progress_bar:
                 "test/clip_topo_overlap_at_10": test_topo_overlap10_total / max(1, test_topo_logged_steps),
                 "test/clip_topo_teacher_top1_median_rank": test_topo_median_rank_total / max(1, test_topo_logged_steps),
                 "test/clip_topo_teacher_top1_mrr": test_topo_mrr_total / max(1, test_topo_logged_steps),
+                "train/clip_neighbor_loss": neighbor_loss_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_loss_scaled": neighbor_loss_scaled_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_teacher_topk": neighbor_topk_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_teacher_temp": clip_neighbor_teacher_temp,
+                "train/clip_neighbor_student_temp": clip_neighbor_student_temp,
+                "train/clip_neighbor_overlap_at_1": neighbor_overlap1_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_overlap_at_5": neighbor_overlap5_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_overlap_at_10": neighbor_overlap10_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_teacher_top1_median_rank": neighbor_median_rank_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_teacher_top1_mrr": neighbor_mrr_total / max(1, neighbor_logged_steps),
+                "train/clip_neighbor_training_only": 1.0,
+                "train/clip_neighbor_shared1000_or_new_test_used": 0.0,
+                "test/clip_neighbor_loss": test_neighbor_loss_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_teacher_topk": test_neighbor_topk_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_overlap_at_1": test_neighbor_overlap1_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_overlap_at_5": test_neighbor_overlap5_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_overlap_at_10": test_neighbor_overlap10_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_teacher_top1_median_rank": test_neighbor_median_rank_total / max(1, test_neighbor_logged_steps),
+                "test/clip_neighbor_teacher_top1_mrr": test_neighbor_mrr_total / max(1, test_neighbor_logged_steps),
                 "train/functional_alignment_loss": align_loss_total / max(1, align_logged_steps),
                 "train/functional_alignment_loss_scaled": align_loss_scaled_total / max(1, align_logged_steps),
                 "train/functional_alignment_mean_loss": align_mean_loss_total / max(1, align_logged_steps),
