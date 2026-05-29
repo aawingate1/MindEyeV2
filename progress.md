@@ -2370,6 +2370,87 @@ Recommended next research questions:
 - Did `8867096_[0-3]` start at or after the projected `2026-05-28T13:56` window and find all four compute-visible checkpoints?
 - Do evaluator logs confirm the unchanged path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` and `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` for each row?
 - Once CSVs exist, do refined `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
+
+## Cycle 37 - 2026-05-29
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Scope was Cycle 36 topology artifact authentication and scientific readout only. No new model branch, loss variant, subject set, evaluator variant, or recovery job was launched.
+- `/job-status.md` was requested by the plan but is not present in this container. Slurm accounting and row logs were used for authentication.
+
+Code/config changes:
+- None.
+
+Commands run:
+- `sacct -j 8918443,8918444 --format=JobIDRaw,JobID,JobName%50,State,ExitCode,Elapsed,MaxRSS,NodeList,ReqMem,Timelimit%20 -P`
+- Inspected `/src/slurms/c36_topo_s57_8918443_{0,1,2,3}.out/.err`.
+- Inspected `/src/slurms/c36_topo_eval_s57_8918444_{0,1,2,3}.out/.err`.
+- Loaded enhanced tensors from `/src/evals/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep/`.
+- Parsed final CSVs under `/src/tables/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+
+Scheduler/accounting readout:
+- `8918443_0` / `cycle36_subj05_topo0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:16:54`, node `della-l02g12`, requested `64G`, time limit `04:30:00`, batch MaxRSS `21528912K`, stdout `/src/slurms/c36_topo_s57_8918443_0.out`, stderr `/src/slurms/c36_topo_s57_8918443_0.err`, failure class none.
+- `8918443_1` / `cycle36_subj05_topo_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:16:54`, node `della-l02g12`, requested `64G`, time limit `04:30:00`, batch MaxRSS `21533120K`, stdout `/src/slurms/c36_topo_s57_8918443_1.out`, stderr `/src/slurms/c36_topo_s57_8918443_1.err`, failure class none.
+- `8918443_2` / `cycle36_subj07_topo0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:07:24`, node `della-l01g15`, requested `64G`, time limit `04:30:00`, batch MaxRSS `21587656K`, stdout `/src/slurms/c36_topo_s57_8918443_2.out`, stderr `/src/slurms/c36_topo_s57_8918443_2.err`, failure class none.
+- `8918443_3` / `cycle36_subj07_topo_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:09:04`, node `della-l01g14`, requested `64G`, time limit `04:30:00`, batch MaxRSS `21594544K`, stdout `/src/slurms/c36_topo_s57_8918443_3.out`, stderr `/src/slurms/c36_topo_s57_8918443_3.err`, failure class none.
+- `8918444_0` / `cycle36_subj05_topo0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:23:53`, node `della-l02g12`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49158324K`, stdout `/src/slurms/c36_topo_eval_s57_8918444_0.out`, stderr `/src/slurms/c36_topo_eval_s57_8918444_0.err`, failure class none.
+- `8918444_1` / `cycle36_subj05_topo_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:29:21`, node `della-l03g16`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49577376K`, stdout `/src/slurms/c36_topo_eval_s57_8918444_1.out`, stderr `/src/slurms/c36_topo_eval_s57_8918444_1.err`, failure class none.
+- `8918444_2` / `cycle36_subj07_topo0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:33:44`, node `della-l02g14`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49568324K`, stdout `/src/slurms/c36_topo_eval_s57_8918444_2.out`, stderr `/src/slurms/c36_topo_eval_s57_8918444_2.err`, failure class none.
+- `8918444_3` / `cycle36_subj07_topo_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:22:40`, node `della-l04g9`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49587428K`, stdout `/src/slurms/c36_topo_eval_s57_8918444_3.out`, stderr `/src/slurms/c36_topo_eval_s57_8918444_3.err`, failure class none.
+
+Training artifact authentication:
+- All four rows loaded the official one-session subject-specific multisubject initialization from `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj0{5,7}/last.pth`.
+- All four rows saved repeated checkpoints to `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last.pth`.
+- The Slurm script and row stdout confirm `topo0` used the topology code path with `TOPO_WEIGHT=0.0`, and `topo_low` used `TOPO_WEIGHT=0.001`.
+- The final tqdm records do not emit a `train/loss` key, so final train loss is unavailable from the retained logs. Final test loss and train-side diagnostics were retained.
+
+Final training diagnostics:
+
+| row | test loss | train PixCorr | test PixCorr | train bwd | test fwd | test bwd | train topo | train topo scaled | test topo | test sim corr | test NN@1 | test NN@5 | test NN@10 | test teacher median rank | test MRR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cycle36_subj05_topo0_1sess_150ep` | 14.3 | 0.801 | 0.193 | 1.000 | 0.670 | 0.583 | 2.500 | 0.000000 | 2.340 | 0.344 | 0.103 | 0.170 | 0.226 | 20 | 0.195 |
+| `cycle36_subj05_topo_low_1sess_150ep` | 14.6 | 0.799 | 0.176 | 1.000 | 0.680 | 0.543 | 0.895 | 0.000895 | 0.772 | 0.361 | 0.113 | 0.179 | 0.236 | 17 | 0.207 |
+| `cycle36_subj07_topo0_1sess_150ep` | 14.2 | 0.788 | 0.226 | 1.000 | 0.730 | 0.563 | 2.620 | 0.000000 | 2.350 | 0.290 | 0.050 | 0.131 | 0.160 | 39 | 0.118 |
+| `cycle36_subj07_topo_low_1sess_150ep` | 14.5 | 0.788 | 0.220 | 1.000 | 0.720 | 0.530 | 0.935 | 0.000935 | 0.809 | 0.308 | 0.070 | 0.132 | 0.178 | 32 | 0.142 |
+
+Evaluator artifact authentication:
+- All four evaluator rows used the unchanged path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+- Each row loaded the expected checkpoint from `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last.pth`.
+- Each row logged `all_enhancedrecons torch.Size([1000, 3, 256, 256])` and saved `evals/<model_name>/<model_name>_all_enhancedrecons.pt`.
+- Independent load check confirmed each enhanced tensor has shape `(1000, 3, 256, 256)` and dtype `torch.float32`.
+- `final_evaluations.py` consumed the intended enhanced tensor in every row via `all_recons_path: evals/<model_name>/<model_name>_all_enhancedrecons.pt`.
+- Final CSVs exist under `/src/tables` for all four protected rows.
+
+Refined enhanced-evaluator metric table:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cycle36_subj05_topo0_1sess_150ep` | 0.192674 | 0.406933 | 0.846794 | 0.916086 | 0.856197 | 0.840533 | 0.768113 | 0.431212 | 0.648778 | 0.552778 | 0.416381 | 0.351920 | 0.355988 | 0.341006 | 0.315086 | 0.423627 |
+| `cycle36_subj05_topo_low_1sess_150ep` | 0.197604 | 0.412733 | 0.841756 | 0.915787 | 0.854318 | 0.853176 | 0.763501 | 0.427588 | 0.647444 | 0.525667 | 0.414780 | 0.350658 | 0.355579 | 0.335405 | 0.314687 | 0.422147 |
+| `cycle36_subj07_topo0_1sess_150ep` | 0.194279 | 0.404695 | 0.829048 | 0.894047 | 0.785077 | 0.770978 | 0.828250 | 0.477893 | 0.680556 | 0.542000 | 0.321338 | 0.321689 | 0.324969 | 0.316007 | 0.281305 | 0.306982 |
+| `cycle36_subj07_topo_low_1sess_150ep` | 0.197323 | 0.402003 | 0.822153 | 0.883711 | 0.776077 | 0.777483 | 0.831761 | 0.477575 | 0.683667 | 0.492444 | 0.318829 | 0.315724 | 0.318166 | 0.311614 | 0.274215 | 0.304403 |
+
+Same-subject `topo_low - topo0` deltas:
+
+| subject | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +0.004930 | +0.005799 | -0.005038 | -0.000299 | -0.001879 | +0.012644 | -0.004611 | -0.003624 | -0.001333 | -0.027111 | -0.001600 | -0.001262 | -0.000408 | -0.005601 | -0.000399 | -0.001480 |
+| subj07 | +0.003044 | -0.002692 | -0.006895 | -0.010336 | -0.009000 | +0.006506 | +0.003511 | -0.000318 | +0.003111 | -0.049556 | -0.002509 | -0.005965 | -0.006803 | -0.004393 | -0.007091 | -0.002580 |
+
+Interpretation against success criteria:
+- Subject 5 fails. BrainRet moved `-0.027111` instead of the required about `+0.02`; ImageRet was essentially preserved at `-0.001333`; CLIP, PixCorr, SSIM, EffNet, and SwAV improved, but Inception, VC, HigherVis, and BrainRet regressed.
+- Subject 7 fails. BrainRet moved `-0.049556`; ImageRet was preserved/slightly improved at `+0.003111`; CLIP and SwAV improved slightly, but Inception, EffNet, VC, HigherVis, and lower visual correlations regressed.
+- The topology term appears to backpropagate and improve the intended local geometry diagnostics: both `topo_low` rows sharply reduce topology loss, improve test similarity correlation, improve test teacher-neighbor median rank and MRR, and mostly improve NN overlap. That mechanistic improvement did not transfer to refined BrainRet.
+
+Decision:
+- Neither subject passes, but topology diagnostics improved, so close this exact full-pairwise batch-local cosine-MSE topology loss as mechanistically informative but practically insufficient.
+- Do not run a broad topology weight grid and do not scale this exact setting to subjects 1/2/5/7.
+- The only adjacent next branch worth considering is a sharper local-neighborhood objective on subjects 5 and 7, such as teacher-neighbor-weighted pairwise loss or soft nearest-neighbor KL from frozen image-CLIP similarities to predicted-CLIP similarities.
+
+Recommended next research questions:
+- Can a sparse teacher-neighbor-weighted objective improve BrainRet without sacrificing ImageRet, unlike the full pairwise topology MSE?
+- Are the refined BrainRet losses driven by a small subset of image categories or by broad rank distortion across the 1000-image retrieval pool?
+- Would evaluating predicted-CLIP retrieval directly before reconstruction reveal where the topology-improved training diagnostics diverge from held-out refined BrainRet?
 ## Cycle 35 - 2026-05-29
 
 Plan source:
@@ -2534,3 +2615,10 @@ Current status and next checks:
 - Training array `8918443_[0-3]` is pending for priority with `04:30:00`, `64G`, one A100 per row.
 - Evaluator array `8918444_[0-3]` is pending on `afterok:8918443` with `04:00:00`, `64G`, one A100 per row.
 - Next cycle should parse `8918443` training logs for final train/test loss, blurry PixCorr, fwd/bwd retrieval, topology loss/scaled loss, NN overlap, rank/MRR diagnostics, MaxRSS, checkpoints, then let or recover `8918444` and compute the required full metric table plus `topo_low - topo0` deltas.
+
+## Cycle 37 - 2026-05-29 chronological addendum
+
+- Detailed Cycle 37 artifact authentication and tables were recorded above in this file after the earlier pending-evaluator section.
+- Final decision for Cycle 37: no new jobs launched; arrays `8918443_[0-3]` and `8918444_[0-3]` completed cleanly; all enhanced tensors and CSVs were authenticated.
+- Primary result: `topo_low - topo0` BrainRet failed on both protected subjects: subj05 `-0.027111`, subj07 `-0.049556`. ImageRet was preserved, but higher-visual and several perceptual metrics regressed.
+- Conclusion: close this exact full-pairwise batch-local cosine-MSE topology loss as mechanistically informative but practically insufficient. The only adjacent next branch worth considering is a sharper local-neighborhood objective on subjects 5 and 7, such as teacher-neighbor-weighted pairwise loss or soft nearest-neighbor KL.
