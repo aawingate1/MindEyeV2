@@ -1,0 +1,42 @@
+{
+  "subj05": {
+    "metrics_flat_tokens": {
+      "nn_overlap_at_1": -0.0018656716417910502,
+      "nn_overlap_at_10": -0.024067164179104483,
+      "nn_overlap_at_5": -0.017164179104477623,
+      "pearson_offdiag_cosine_similarity": -0.006176892025206049,
+      "spearman_rsa_cosine_distance": 0.0011112630868704287,
+      "teacher_top1_median_rank_under_pred": 11.0,
+      "teacher_top1_mrr_under_pred": -0.016914244589769478
+    },
+    "metrics_mean_pooled_tokens": {
+      "nn_overlap_at_1": -0.020522388059701496,
+      "nn_overlap_at_10": -0.006716417910447803,
+      "nn_overlap_at_5": -0.010447761194029848,
+      "pearson_offdiag_cosine_similarity": -0.04213498568970493,
+      "spearman_rsa_cosine_distance": -0.0455636483064181,
+      "teacher_top1_median_rank_under_pred": -1.0,
+      "teacher_top1_mrr_under_pred": -0.01807718323471022
+    }
+  },
+  "subj07": {
+    "metrics_flat_tokens": {
+      "nn_overlap_at_1": -0.009328358208955216,
+      "nn_overlap_at_10": -0.016791044776119396,
+      "nn_overlap_at_5": -0.030223880597014918,
+      "pearson_offdiag_cosine_similarity": 0.008995566747317219,
+      "spearman_rsa_cosine_distance": 0.011461335257467842,
+      "teacher_top1_median_rank_under_pred": 3.5,
+      "teacher_top1_mrr_under_pred": -0.014818063174650425
+    },
+    "metrics_mean_pooled_tokens": {
+      "nn_overlap_at_1": -0.0037313432835820864,
+      "nn_overlap_at_10": -0.004850746268656697,
+      "nn_overlap_at_5": -0.014179104477611948,
+      "pearson_offdiag_cosine_similarity": 0.02673323605335412,
+      "spearman_rsa_cosine_distance": 0.023964675550878473,
+      "teacher_top1_median_rank_under_pred": -4.0,
+      "teacher_top1_mrr_under_pred": -0.010993778272095134
+    }
+  }
+}

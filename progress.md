@@ -2441,3 +2441,96 @@ Decision:
 
 Telegram-ready update:
 Cycle 35 authenticated the completed Cycle 30 enhanced-evaluator readout and no new branch was launched. Evaluator array `8867096_[0-3]` completed cleanly with exit `0:0`; row runtimes were 2:25-2:29 and MaxRSS about 49.4-49.6 GB. All four rows loaded the expected checkpoints, produced enhanced tensors, and `final_evaluations.py` consumed `evals/<model>/<model>_all_enhancedrecons.pt`. The result is negative: subj05 `align_low - align0` BrainRet `-0.253778` and ImageRet `-0.238000`; subj07 BrainRet `-0.224778` and ImageRet `-0.388333`. CLIP/Inception were mostly preserved or improved, especially subj07 CLIP `+0.019146`, but retrieval collapsed, so distributional functional alignment is closed as global moment matching that damaged local stimulus geometry. Recommended next branch is topology-preserving predicted-CLIP alignment using training-only pairwise/rank/nearest-neighbor geometry.
+
+## Cycle 36 - 2026-05-29
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Reconfirmed the Cycle 30 mean-plus-covariance/distributional functional-alignment row is closed as negative from Cycle 35: subj05 `align_low - align0` BrainRet `-0.253778`, ImageRet `-0.238000`; subj07 BrainRet `-0.224778`, ImageRet `-0.388333`.
+- `/job-status.md` had no active-job content, and `squeue -u $USER` initially showed no active Slurm jobs.
+
+Code/config changes:
+- Added `/src/cycle36_clip_geometry_diagnostic.py` and `/src/cycle36_geometry_diagnostic.slurm`.
+  - The diagnostic loads the four completed Cycle 30 checkpoints on compute-visible `/scratch/.../train_logs`, extracts predicted CLIP tokens from training-only `wds/subj0{5,7}/train/{0..0}.tar`, extracts frozen image OpenCLIP-bigG tokens from `coco_images_224_float16.hdf5`, deduplicates image IDs, and computes flattened-token plus mean-pooled-token geometry.
+  - It records `training_only=True`, `shared1000_or_new_test_used=False`, and `test_sources_used=[]`.
+- Patched `/src/Train.py` with disabled-by-default Cycle 36 topology flags:
+  - `--use_clip_topology`, default `False`
+  - `--clip_topo_weight`, default `0.0`
+  - `--clip_topo_temp`, default `0.07`
+  - `--clip_topo_center`, default enabled
+  - The loss is batch-local off-diagonal pairwise cosine-similarity MSE after shared temperature scaling and optional row-centering. It logs loss, scaled loss, similarity correlation, top-1/5/10 neighbor overlap, teacher-top1 median rank, and MRR. Defaults preserve prior behavior unless the new flag is passed.
+- Added `/src/cycle36_topo_smoke.slurm`, `/src/cycle36_topo_train_s57.slurm`, and `/src/cycle36_topo_eval_s57.slurm`.
+  - Full row names: `cycle36_subj05_topo0_1sess_150ep`, `cycle36_subj05_topo_low_1sess_150ep`, `cycle36_subj07_topo0_1sess_150ep`, `cycle36_subj07_topo_low_1sess_150ep`.
+  - `topo0` uses the same topology code path with `clip_topo_weight=0.0`; `topo_low` uses one conservative weight, `0.001`.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle36_clip_geometry_diagnostic.py /src/Train.py` passed.
+- `bash -n /src/cycle36_geometry_diagnostic.slurm /src/cycle36_topo_smoke.slurm /src/cycle36_topo_train_s57.slurm /src/cycle36_topo_eval_s57.slurm` passed.
+
+Phase 1 geometry diagnostic jobs:
+- First run `8917610` failed operationally in `00:01:49`, exit `1:0`, node `della-l09g5`, batch MaxRSS `27491684K`, stdout `/src/slurms/c36_geom_diag_8917610.out`, stderr `/src/slurms/c36_geom_diag_8917610.err`.
+  - Failure: HDF5 image indexing requires increasing indices. No diagnostic outputs were written.
+  - Recovery patch sorted HDF5 image indices and restored batch order.
+- Rerun `8917753` completed in `00:03:59`, exit `0:0`, node `della-l09g5`, batch MaxRSS `36193.50M`, stdout `/src/slurms/c36_geom_diag_8917753.out`, stderr `/src/slurms/c36_geom_diag_8917753.err`.
+- Diagnostic output paths:
+  - `/src/tables/cycle36_geometry/cycle30_subj05_align0_1sess_150ep_geometry.json`
+  - `/src/tables/cycle36_geometry/cycle30_subj05_align_low_1sess_150ep_geometry.json`
+  - `/src/tables/cycle36_geometry/cycle30_subj07_align0_1sess_150ep_geometry.json`
+  - `/src/tables/cycle36_geometry/cycle30_subj07_align_low_1sess_150ep_geometry.json`
+  - `/src/tables/cycle36_geometry/cycle36_geometry_summary.csv`
+  - `/src/tables/cycle36_geometry/cycle36_geometry_deltas.json`
+
+Diagnostic provenance:
+- Subjects: 5 and 7.
+- Split: one-session training shard only, `wds/subj05/train/{0..0}.tar` and `wds/subj07/train/{0..0}.tar`.
+- Image count: `536` deduplicated training images per subject/row.
+- Teacher geometry: frozen OpenCLIP-bigG image tokens from training images only.
+- Predicted geometry: checkpoint predicted CLIP tokens at the MindEye predicted-CLIP boundary.
+- No shared1000/new-test labels, no new-test fMRI, and no evaluator tensors were used as topology targets.
+
+Phase 1 diagnostic summary:
+
+| subject | row | space | Spearman RSA | Pearson sim | NN@1 | NN@5 | NN@10 | teacher NN median rank | teacher NN MRR |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | align0 | flat tokens | 0.297185 | 0.328214 | 0.039179 | 0.144030 | 0.182090 | 28.0 | 0.124715 |
+| subj05 | align_low | flat tokens | 0.298296 | 0.322037 | 0.037313 | 0.126866 | 0.158022 | 39.0 | 0.107800 |
+| subj05 | align0 | mean pooled | 0.140196 | 0.164560 | 0.091418 | 0.154851 | 0.181530 | 33.0 | 0.162072 |
+| subj05 | align_low | mean pooled | 0.094632 | 0.122425 | 0.070896 | 0.144403 | 0.174813 | 32.0 | 0.143994 |
+| subj07 | align0 | flat tokens | 0.284901 | 0.310573 | 0.065299 | 0.141791 | 0.171642 | 28.0 | 0.141610 |
+| subj07 | align_low | flat tokens | 0.296362 | 0.319569 | 0.055970 | 0.111567 | 0.154851 | 31.5 | 0.126792 |
+| subj07 | align0 | mean pooled | 0.143948 | 0.164275 | 0.059701 | 0.161194 | 0.177052 | 36.0 | 0.147676 |
+| subj07 | align_low | mean pooled | 0.167913 | 0.191008 | 0.055970 | 0.147015 | 0.172201 | 32.0 | 0.136682 |
+
+Diagnostic deltas, `align_low - align0`:
+- subj05 flat tokens: NN@5 `-0.017164`, NN@10 `-0.024067`, MRR `-0.016914`, median rank worsened by `+11.0`; Spearman was essentially unchanged at `+0.001111`.
+- subj05 mean pooled: Spearman `-0.045564`, Pearson `-0.042135`, NN@1 `-0.020522`, NN@5 `-0.010448`, MRR `-0.018077`.
+- subj07 flat tokens: NN@1 `-0.009328`, NN@5 `-0.030224`, NN@10 `-0.016791`, MRR `-0.014818`, median rank worsened by `+3.5`; Spearman/Pearson rose slightly.
+- subj07 mean pooled: NN@5 `-0.014179`, NN@10 `-0.004851`, MRR `-0.010994`; Spearman/Pearson rose slightly.
+
+Phase 1 decision:
+- Go for Phase 2. Although global Spearman/Pearson are mixed, the local/rank metrics most tied to retrieval degrade in both subjects and both representation spaces. This supports the intended mechanism: Cycle 30 global moment matching damaged local stimulus-neighborhood geometry.
+
+Phase 2 smoke:
+- Submitted `sbatch /src/cycle36_topo_smoke.slurm` -> `8918126_[0-1]`.
+- `8918126_0` / `cycle36_smoke_subj07_topo0_1sess_3ep`: completed `0:0`, elapsed `00:06:31`, node `della-l02g14`, batch MaxRSS `21591404K`, stdout `/src/slurms/c36_topo_smoke_8918126_0.out`, stderr `/src/slurms/c36_topo_smoke_8918126_0.err`, checkpoint `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle36_smoke_subj07_topo0_1sess_3ep/last.pth`.
+- `8918126_1` / `cycle36_smoke_subj07_topo_low_1sess_3ep`: completed `0:0`, elapsed `00:05:04`, node `della-l09g5`, batch MaxRSS `22893496K`, stdout `/src/slurms/c36_topo_smoke_8918126_1.out`, stderr `/src/slurms/c36_topo_smoke_8918126_1.err`, checkpoint `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle36_smoke_subj07_topo_low_1sess_3ep/last.pth`.
+- Smoke final logged checks:
+  - `topo0`: final train/test loss `13.4`, blurry PixCorr train/test `0.286/0.196`, train fwd/bwd `0.427/0.267` in the progress-bar order for test and `0.966` bwd train; `train/clip_topo_loss=4.59`, `train/clip_topo_loss_scaled=0`, test topology loss `2.53`, test NN@5 `0.094`, no shape/device failures.
+  - `topo_low`: final train/test loss `13.4`, blurry PixCorr train/test `0.286/0.196`, test fwd/bwd `0.427/0.267`, `train/clip_topo_loss=4.50`, `train/clip_topo_loss_scaled=0.00450`, test topology loss `2.43`, test NN@5 `0.096`, no shape/device failures.
+  - `topo0` zero-control scaled contribution was exactly zero. `topo_low` had finite low-magnitude topology contribution. Memory stayed within the prior safe range.
+
+Full Phase 2 jobs launched:
+- Submitted `sbatch /src/cycle36_topo_train_s57.slurm` -> `8918443_[0-3]`, pending at write time:
+  - `8918443_0`: `cycle36_subj05_topo0_1sess_150ep`
+  - `8918443_1`: `cycle36_subj05_topo_low_1sess_150ep`
+  - `8918443_2`: `cycle36_subj07_topo0_1sess_150ep`
+  - `8918443_3`: `cycle36_subj07_topo_low_1sess_150ep`
+- Submitted dependent evaluator `sbatch --dependency=afterok:8918443 /src/cycle36_topo_eval_s57.slurm` -> `8918444_[0-3]`, pending on dependency at write time.
+- Full expected checkpoints: `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep/last.pth`.
+- Full expected enhanced tensors: `/src/evals/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep_all_enhancedrecons.pt`.
+- Full expected CSVs: `/src/tables/cycle36_subj0{5,7}_topo{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+
+Current status and next checks:
+- Training array `8918443_[0-3]` is pending for priority with `04:30:00`, `64G`, one A100 per row.
+- Evaluator array `8918444_[0-3]` is pending on `afterok:8918443` with `04:00:00`, `64G`, one A100 per row.
+- Next cycle should parse `8918443` training logs for final train/test loss, blurry PixCorr, fwd/bwd retrieval, topology loss/scaled loss, NN overlap, rank/MRR diagnostics, MaxRSS, checkpoints, then let or recover `8918444` and compute the required full metric table plus `topo_low - topo0` deltas.

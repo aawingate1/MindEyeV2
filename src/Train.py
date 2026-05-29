@@ -303,6 +303,22 @@ parser.add_argument(
     "--functional_alignment_stats_path", type=str, default=None,
     help="Path to training-only reference statistics built by cycle30_build_alignment_stats.py.",
 )
+parser.add_argument(
+    "--use_clip_topology", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable batch-local predicted/image CLIP topology loss. Default False preserves baseline behavior.",
+)
+parser.add_argument(
+    "--clip_topo_weight", type=float, default=0.0,
+    help="Weight for the CLIP topology loss. Use 0 for same-code logging controls.",
+)
+parser.add_argument(
+    "--clip_topo_temp", type=float, default=0.07,
+    help="Temperature applied to predicted and image CLIP cosine similarity matrices for topology loss.",
+)
+parser.add_argument(
+    "--clip_topo_center", action=argparse.BooleanOptionalAction, default=True,
+    help="Row-center off-diagonal similarity matrices before topology MSE/correlation.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -939,6 +955,47 @@ def relational_consistency_stats(pred_norm, target_norm):
     rel_corr = torch.sum(pred_centered * target_centered) / denom
     return rel_loss, rel_corr
 
+def clip_topology_stats(pred_norm, target_norm, temp=0.07, center=True):
+    pred_sim = pred_norm.float() @ pred_norm.float().T
+    target_sim = target_norm.float() @ target_norm.float().T
+    temp = max(float(temp), 1e-6)
+    pred_sim = pred_sim / temp
+    target_sim = target_sim / temp
+    if center:
+        eye = torch.eye(pred_sim.shape[0], dtype=torch.bool, device=pred_sim.device)
+        count = max(1, pred_sim.shape[0] - 1)
+        pred_row_mean = pred_sim.masked_fill(eye, 0).sum(dim=1, keepdim=True) / count
+        target_row_mean = target_sim.masked_fill(eye, 0).sum(dim=1, keepdim=True) / count
+        pred_sim = pred_sim - pred_row_mean
+        target_sim = target_sim - target_row_mean
+    pred_offdiag = offdiag_values(pred_sim)
+    target_offdiag = offdiag_values(target_sim)
+    topo_loss = torch.mean((pred_offdiag - target_offdiag) ** 2)
+    pred_centered = pred_offdiag - pred_offdiag.mean()
+    target_centered = target_offdiag - target_offdiag.mean()
+    denom = torch.sqrt(torch.sum(pred_centered ** 2) * torch.sum(target_centered ** 2)).clamp_min(1e-12)
+    topo_corr = torch.sum(pred_centered * target_centered) / denom
+
+    with torch.no_grad():
+        n = pred_sim.shape[0]
+        labels = torch.arange(n, device=pred_sim.device)
+        pred_rank_sim = pred_sim.masked_fill(torch.eye(n, dtype=torch.bool, device=pred_sim.device), -float("inf"))
+        target_rank_sim = target_sim.masked_fill(torch.eye(n, dtype=torch.bool, device=target_sim.device), -float("inf"))
+        overlap_stats = {}
+        for k in (1, 5, 10):
+            kk = min(k, max(1, n - 1))
+            pred_topk = torch.topk(pred_rank_sim, k=kk, dim=1).indices
+            target_topk = torch.topk(target_rank_sim, k=kk, dim=1).indices
+            overlap = (pred_topk[:, :, None] == target_topk[:, None, :]).any(dim=2).float().sum(dim=1) / kk
+            overlap_stats[f"overlap_at_{k}"] = overlap.mean()
+        teacher_nn = torch.topk(target_rank_sim, k=1, dim=1).indices[:, 0]
+        pred_order = torch.argsort(pred_rank_sim, dim=1, descending=True)
+        ranks = (pred_order == teacher_nn[:, None]).float().argmax(dim=1).float() + 1.0
+        overlap_stats["teacher_top1_median_rank"] = ranks.median()
+        overlap_stats["teacher_top1_mrr"] = (1.0 / ranks).mean()
+        del labels
+    return topo_loss, topo_corr, overlap_stats
+
 def relational_target_from_clip(clip_target_norm, perm=None, betas=None, select=None):
     if perm is None or betas is None or select is None:
         return clip_target_norm
@@ -1187,9 +1244,26 @@ for epoch in progress_bar:
     rel_loss_scaled_total = 0.
     rel_sim_corr_total = 0.
     rel_logged_steps = 0
+    topo_loss_total = 0.
+    topo_loss_scaled_total = 0.
+    topo_sim_corr_total = 0.
+    topo_overlap1_total = 0.
+    topo_overlap5_total = 0.
+    topo_overlap10_total = 0.
+    topo_median_rank_total = 0.
+    topo_mrr_total = 0.
+    topo_logged_steps = 0
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
+    test_topo_loss_total = 0.
+    test_topo_sim_corr_total = 0.
+    test_topo_overlap1_total = 0.
+    test_topo_overlap5_total = 0.
+    test_topo_overlap10_total = 0.
+    test_topo_median_rank_total = 0.
+    test_topo_mrr_total = 0.
+    test_topo_logged_steps = 0
     align_loss_total = 0.
     align_loss_scaled_total = 0.
     align_mean_loss_total = 0.
@@ -1333,7 +1407,7 @@ for epoch in progress_bar:
                 align_cov_dist_total += align_cov_dist.detach().float().item()
                 align_logged_steps += 1
 
-            if clip_scale>0 or relational_consistency:
+            if clip_scale>0 or relational_consistency or use_clip_topology:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                 clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
@@ -1355,6 +1429,29 @@ for epoch in progress_bar:
                 rel_loss_scaled_total += rel_loss_scaled.detach().float().item()
                 rel_sim_corr_total += rel_sim_corr.detach().float().item()
                 rel_logged_steps += 1
+
+            if use_clip_topology:
+                if epoch < int(mixup_pct * num_epochs):
+                    topo_target_norm = relational_target_from_clip(clip_target_norm, perm=perm, betas=betas, select=select)
+                else:
+                    topo_target_norm = clip_target_norm
+                topo_loss, topo_sim_corr, topo_stats = clip_topology_stats(
+                    clip_voxels_norm,
+                    topo_target_norm,
+                    temp=clip_topo_temp,
+                    center=clip_topo_center,
+                )
+                topo_loss_scaled = topo_loss * clip_topo_weight
+                loss += topo_loss_scaled
+                topo_loss_total += topo_loss.detach().float().item()
+                topo_loss_scaled_total += topo_loss_scaled.detach().float().item()
+                topo_sim_corr_total += topo_sim_corr.detach().float().item()
+                topo_overlap1_total += topo_stats["overlap_at_1"].detach().float().item()
+                topo_overlap5_total += topo_stats["overlap_at_5"].detach().float().item()
+                topo_overlap10_total += topo_stats["overlap_at_10"].detach().float().item()
+                topo_median_rank_total += topo_stats["teacher_top1_median_rank"].detach().float().item()
+                topo_mrr_total += topo_stats["teacher_top1_mrr"].detach().float().item()
+                topo_logged_steps += 1
 
             if use_prior:
                 loss_prior, prior_out = model_for_submodules.diffusion_prior(text_embed=backbone, image_embed=clip_target)
@@ -1490,7 +1587,7 @@ for epoch in progress_bar:
                 clip_voxels /= 3
                 backbone /= 3
 
-                if clip_scale>0 or relational_consistency:
+                if clip_scale>0 or relational_consistency or use_clip_topology:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                     clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
 
@@ -1522,6 +1619,22 @@ for epoch in progress_bar:
                     test_rel_loss_total += test_rel_loss.detach().float().item()
                     test_rel_sim_corr_total += test_rel_sim_corr.detach().float().item()
                     test_rel_logged_steps += 1
+
+                if use_clip_topology:
+                    test_topo_loss, test_topo_sim_corr, test_topo_stats = clip_topology_stats(
+                        clip_voxels_norm,
+                        clip_target_norm,
+                        temp=clip_topo_temp,
+                        center=clip_topo_center,
+                    )
+                    test_topo_loss_total += test_topo_loss.detach().float().item()
+                    test_topo_sim_corr_total += test_topo_sim_corr.detach().float().item()
+                    test_topo_overlap1_total += test_topo_stats["overlap_at_1"].detach().float().item()
+                    test_topo_overlap5_total += test_topo_stats["overlap_at_5"].detach().float().item()
+                    test_topo_overlap10_total += test_topo_stats["overlap_at_10"].detach().float().item()
+                    test_topo_median_rank_total += test_topo_stats["teacher_top1_median_rank"].detach().float().item()
+                    test_topo_mrr_total += test_topo_stats["teacher_top1_mrr"].detach().float().item()
+                    test_topo_logged_steps += 1
 
                 if use_prior:
                     loss_prior, contaminated_prior_out = model_for_submodules.diffusion_prior(text_embed=backbone[random_samps], image_embed=clip_target[random_samps])
@@ -1588,6 +1701,21 @@ for epoch in progress_bar:
                 "train/rel_sim_corr": rel_sim_corr_total / max(1, rel_logged_steps),
                 "test/rel_loss": test_rel_loss_total / max(1, test_rel_logged_steps),
                 "test/rel_sim_corr": test_rel_sim_corr_total / max(1, test_rel_logged_steps),
+                "train/clip_topo_loss": topo_loss_total / max(1, topo_logged_steps),
+                "train/clip_topo_loss_scaled": topo_loss_scaled_total / max(1, topo_logged_steps),
+                "train/clip_topo_sim_corr": topo_sim_corr_total / max(1, topo_logged_steps),
+                "train/clip_topo_overlap_at_1": topo_overlap1_total / max(1, topo_logged_steps),
+                "train/clip_topo_overlap_at_5": topo_overlap5_total / max(1, topo_logged_steps),
+                "train/clip_topo_overlap_at_10": topo_overlap10_total / max(1, topo_logged_steps),
+                "train/clip_topo_teacher_top1_median_rank": topo_median_rank_total / max(1, topo_logged_steps),
+                "train/clip_topo_teacher_top1_mrr": topo_mrr_total / max(1, topo_logged_steps),
+                "test/clip_topo_loss": test_topo_loss_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_sim_corr": test_topo_sim_corr_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_overlap_at_1": test_topo_overlap1_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_overlap_at_5": test_topo_overlap5_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_overlap_at_10": test_topo_overlap10_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_teacher_top1_median_rank": test_topo_median_rank_total / max(1, test_topo_logged_steps),
+                "test/clip_topo_teacher_top1_mrr": test_topo_mrr_total / max(1, test_topo_logged_steps),
                 "train/functional_alignment_loss": align_loss_total / max(1, align_logged_steps),
                 "train/functional_alignment_loss_scaled": align_loss_scaled_total / max(1, align_logged_steps),
                 "train/functional_alignment_mean_loss": align_mean_loss_total / max(1, align_logged_steps),
