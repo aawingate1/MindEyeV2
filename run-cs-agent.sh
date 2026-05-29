@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AGENT_DIR="$AGENT_DIR/cs-agent"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_DIR="$ROOT_DIR/cs-agent"
 CODEX_BIN="/scratch/gpfs/KNORMAN/aw1907/tools/bin/codex"
 CODEX_HOME_DIR="${CODEX_HOME_DIR:-/home/aw1907/.codex}"
+
+touch "$ROOT_DIR/job-status.md"
 
 bwrap \
   --die-with-parent \
@@ -21,9 +23,10 @@ bwrap \
   --ro-bind /etc /etc \
   --ro-bind "$CODEX_BIN" /codex \
   --bind "$CODEX_HOME_DIR" /codex-home \
-  --bind "$(dirname "$AGENT_DIR")/strategizing-chat.md" /strategizing-chat.md \
-  --bind "$(dirname "$AGENT_DIR")/plan.md" /plan.md \
-  --ro-bind "$(dirname "$AGENT_DIR")/progress.md" /progress.md \
+  --bind "$ROOT_DIR/strategizing-chat.md" /strategizing-chat.md \
+  --ro-bind "$ROOT_DIR/plan.md" /plan.md \
+  --ro-bind "$ROOT_DIR/progress.md" /progress.md \
+  --ro-bind "$ROOT_DIR/job-status.md" /job-status.md \
   --bind "$AGENT_DIR" /workspace \
   --chdir /workspace \
   --setenv HOME /workspace \

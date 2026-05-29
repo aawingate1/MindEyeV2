@@ -2370,3 +2370,74 @@ Recommended next research questions:
 - Did `8867096_[0-3]` start at or after the projected `2026-05-28T13:56` window and find all four compute-visible checkpoints?
 - Do evaluator logs confirm the unchanged path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` and `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` for each row?
 - Once CSVs exist, do refined `align_low - align0` BrainRet deltas reach about `+0.02` separately for subjects 5 and 7 while preserving CLIP, Inception, ImageRet, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
+## Cycle 35 - 2026-05-29
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is due.
+- Scope was artifact authentication and metric extraction for the completed Cycle 30 distributional functional-alignment evaluator rows. No new modeling branch, training rerun, evaluator rerun, grid, adapter, refiner/generator change, or image-side intervention was launched before interpreting the four required rows.
+
+Code/config changes:
+- None.
+
+Commands run:
+- `sacct -j 8867096 --format=JobIDRaw,JobID,JobName%45,State,ExitCode,Elapsed,MaxRSS,NodeList,ReqMem,Timelimit%20 -P`
+- Inspected `/src/slurms/c30_align_eval_s57_8867096_{0,1,2,3}.out/.err`.
+- Inspected `/src/evals/cycle30_subj{05,07}_align{0,_low}_1sess_150ep/` and `/src/tables/cycle30_subj{05,07}_align{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+- Parsed the four final CSVs and loaded `/src/tables/cycle30_subj05_clip_train_stats.pt` and `/src/tables/cycle30_subj07_clip_train_stats.pt`.
+
+Scheduler/accounting readout for enhanced evaluator `8867096_[0-3]`:
+- `8867096_0` / `cycle30_subj05_align0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:25:01`, node `della-l02g10`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49410188K`, stdout `/src/slurms/c30_align_eval_s57_8867096_0.out`, stderr `/src/slurms/c30_align_eval_s57_8867096_0.err`, failure class none.
+- `8867096_1` / `cycle30_subj05_align_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:29:28`, node `della-l04g8`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49429840K`, stdout `/src/slurms/c30_align_eval_s57_8867096_1.out`, stderr `/src/slurms/c30_align_eval_s57_8867096_1.err`, failure class none.
+- `8867096_2` / `cycle30_subj07_align0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:28:34`, node `della-l02g9`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49432520K`, stdout `/src/slurms/c30_align_eval_s57_8867096_2.out`, stderr `/src/slurms/c30_align_eval_s57_8867096_2.err`, failure class none.
+- `8867096_3` / `cycle30_subj07_align_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:25:56`, node `della-l02g16`, requested `64G`, time limit `04:00:00`, batch MaxRSS `49627664K`, stdout `/src/slurms/c30_align_eval_s57_8867096_3.out`, stderr `/src/slurms/c30_align_eval_s57_8867096_3.err`, failure class none.
+
+Artifact and path verification:
+- All four evaluator rows used the unchanged path `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py`.
+- Each row loaded the expected checkpoint:
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj05_align0_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj05_align_low_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj07_align0_1sess_150ep/last.pth`
+  - `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle30_subj07_align_low_1sess_150ep/last.pth`
+- All four enhanced tensors exist and were logged as `torch.Size([1000, 3, 256, 256])`:
+  - `/src/evals/cycle30_subj05_align0_1sess_150ep/cycle30_subj05_align0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle30_subj05_align_low_1sess_150ep/cycle30_subj05_align_low_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle30_subj07_align0_1sess_150ep/cycle30_subj07_align0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle30_subj07_align_low_1sess_150ep/cycle30_subj07_align_low_1sess_150ep_all_enhancedrecons.pt`
+- `final_evaluations.py` consumed the enhanced tensor in every row via the expected `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` line.
+- Final CSVs were found under `/src/tables`:
+  - `/src/tables/cycle30_subj05_align0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle30_subj05_align_low_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle30_subj07_align0_1sess_150ep_all_enhancedrecons.csv`
+  - `/src/tables/cycle30_subj07_align_low_1sess_150ep_all_enhancedrecons.csv`
+
+Stats provenance preserved:
+- Subject 5 stats: `/src/tables/cycle30_subj05_clip_train_stats.pt`; train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj05/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `test_sources_used=[]`; `count=600`; `unique_image_count=482`; `skipped_duplicate_batches=4`; dtype `torch.float32`; mean shape `(1664,)`; covariance shape `(1664, 1664)`; mean norm `21.957136`; covariance norm `24.123350`; covariance diagonal range `0.000757-7.141074`.
+- Subject 7 stats: `/src/tables/cycle30_subj07_clip_train_stats.pt`; train URL `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj07/train/{0..0}.tar`; `training_only=True`; `shared1000_or_new_test_used=False`; `test_sources_used=[]`; `count=600`; `unique_image_count=482`; `skipped_duplicate_batches=4`; dtype `torch.float32`; mean shape `(1664,)`; covariance shape `(1664, 1664)`; mean norm `22.037144`; covariance norm `23.991619`; covariance diagonal range `0.000878-6.695669`.
+
+Refined enhanced-evaluator metric table:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cycle30_subj05_align0_1sess_150ep` | 0.192674 | 0.406933 | 0.846794 | 0.916086 | 0.856197 | 0.840533 | 0.768113 | 0.431212 | 0.648778 | 0.552778 | 0.416381 | 0.351920 | 0.355988 | 0.341006 | 0.315086 | 0.423627 |
+| `cycle30_subj05_align_low_1sess_150ep` | 0.193479 | 0.413630 | 0.839868 | 0.916032 | 0.856033 | 0.839441 | 0.767524 | 0.432645 | 0.410778 | 0.299000 | 0.409822 | 0.342277 | 0.348690 | 0.333368 | 0.312231 | 0.419540 |
+| `cycle30_subj07_align0_1sess_150ep` | 0.194279 | 0.404695 | 0.829048 | 0.894047 | 0.785077 | 0.770978 | 0.828250 | 0.477893 | 0.680556 | 0.542000 | 0.321338 | 0.321689 | 0.324969 | 0.316007 | 0.281305 | 0.306982 |
+| `cycle30_subj07_align_low_1sess_150ep` | 0.194236 | 0.406189 | 0.831371 | 0.887494 | 0.788831 | 0.790124 | 0.820455 | 0.473685 | 0.292222 | 0.317222 | 0.322754 | 0.321784 | 0.322480 | 0.313069 | 0.280129 | 0.308908 |
+
+Same-subject `align_low - align0` deltas:
+
+| subject | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +0.000805 | +0.006696 | -0.006926 | -0.000054 | -0.000164 | -0.001091 | -0.000588 | +0.001433 | -0.238000 | -0.253778 | -0.006559 | -0.009644 | -0.007298 | -0.007639 | -0.002855 | -0.004087 |
+| subj07 | -0.000043 | +0.001494 | +0.002323 | -0.006553 | +0.003754 | +0.019146 | -0.007794 | -0.004207 | -0.388333 | -0.224778 | +0.001416 | +0.000095 | -0.002490 | -0.002938 | -0.001176 | +0.001926 |
+
+Interpretation against success criteria:
+- Subject 5 fails decisively. BrainRet regressed by `-0.253778`, ImageRet regressed by `-0.238000`, VC regressed by `-0.006559`, HigherVis regressed by `-0.004087`, and SwAV distance worsened by `+0.001433`. CLIP and Inception were nearly preserved, and EffNet distance slightly improved, but the retrieval and brain-alignment regressions dominate.
+- Subject 7 also fails decisively. BrainRet regressed by `-0.224778` and ImageRet regressed by `-0.388333`. CLIP improved by `+0.019146`, Inception improved by `+0.003754`, EffNet and SwAV distances improved, and VC/HigherVis moved slightly positive, but the plan requires BrainRet improvement and retrieval preservation, not a retrieval collapse.
+- The enhanced table matches the training-log warning: low-weight mean/covariance alignment reduced global moment mismatch but damaged stimulus-level local geometry and semantic retrieval.
+
+Decision:
+- Close this specific distributional functional-alignment attempt. Neither subject passes; do not increase alignment weight, add alignment sites, combine with adapters, or move to image-side interventions from this result.
+- Practical next-step recommendation, per `/plan.md`: if continuing, test topology-preserving predicted-CLIP alignment on subjects 5 and 7 only, with the unchanged one-session protocol, same-code zero row plus one conservative nonzero row, training-only teacher/reference geometry from frozen image-CLIP embeddings, and a loss that preserves pairwise cosine/rank/nearest-neighbor/RSA-style geometry at the predicted CLIP boundary.
+
+Telegram-ready update:
+Cycle 35 authenticated the completed Cycle 30 enhanced-evaluator readout and no new branch was launched. Evaluator array `8867096_[0-3]` completed cleanly with exit `0:0`; row runtimes were 2:25-2:29 and MaxRSS about 49.4-49.6 GB. All four rows loaded the expected checkpoints, produced enhanced tensors, and `final_evaluations.py` consumed `evals/<model>/<model>_all_enhancedrecons.pt`. The result is negative: subj05 `align_low - align0` BrainRet `-0.253778` and ImageRet `-0.238000`; subj07 BrainRet `-0.224778` and ImageRet `-0.388333`. CLIP/Inception were mostly preserved or improved, especially subj07 CLIP `+0.019146`, but retrieval collapsed, so distributional functional alignment is closed as global moment matching that damaged local stimulus geometry. Recommended next branch is topology-preserving predicted-CLIP alignment using training-only pairwise/rank/nearest-neighbor geometry.

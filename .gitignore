@@ -2,6 +2,7 @@ wandb/
 train_logs/
 slurms/
 cs-agent/plan.md.next
+job-status.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import time
@@ -22,6 +23,7 @@ TELEGRAM_ENV = STATE_DIR / "telegram.env"
 STRATEGY_CHAT = ROOT / "strategizing-chat.md"
 PLAN_FILE = ROOT / "plan.md"
 CS_PLAN_DRAFT = ROOT / "cs-agent" / "plan.md.next"
+JOB_STATUS = ROOT / "job-status.md"
 
 AGENTS = {
     "bio": ROOT / "run-bio-agent.sh",
@@ -65,6 +67,73 @@ def promote_cs_plan_draft() -> None:
     if not draft:
         raise RuntimeError(f"cs-agent did not write a non-empty plan draft at {CS_PLAN_DRAFT}")
     PLAN_FILE.write_text(draft + "\n", encoding="utf-8")
+
+
+def command_output(cmd: list[str], timeout_s: int = 30) -> tuple[int, str]:
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        return 127, f"{cmd[0]} not found"
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.stdout or ""
+        return 124, f"timed out after {timeout_s}s\n{partial}"
+    return result.returncode, result.stdout.strip()
+
+
+def update_job_status(slurm_user: str, sacct_lookback_h: int) -> bool:
+    squeue_cmd = ["squeue", "-h", "-u", slurm_user, "-o", "%i|%T|%j|%M|%D|%R"]
+    squeue_code, squeue_text = command_output(squeue_cmd)
+    active = squeue_code == 0 and bool(squeue_text.strip())
+
+    start = datetime.fromtimestamp(time.time() - sacct_lookback_h * 3600).strftime("%Y-%m-%dT%H:%M:%S")
+    sacct_cmd = [
+        "sacct",
+        "-u",
+        slurm_user,
+        "--starttime",
+        start,
+        "--format=JobID,JobName%40,State,ExitCode,Elapsed,MaxRSS",
+        "-P",
+        "--noheader",
+    ]
+    sacct_code, sacct_text = command_output(sacct_cmd)
+
+    JOB_STATUS.write_text(
+        f"# Job Status\n\n"
+        f"Updated: {now()}\n"
+        f"Slurm user: {slurm_user}\n"
+        f"Active jobs: {'yes' if active else 'no'}\n\n"
+        f"## Active Jobs (`squeue`)\n\n"
+        f"Command: {' '.join(squeue_cmd)}\n"
+        f"Exit code: {squeue_code}\n\n"
+        f"```text\n{squeue_text or '(none)'}\n```\n\n"
+        f"## Recent Jobs (`sacct`, last {sacct_lookback_h}h)\n\n"
+        f"Command: {' '.join(sacct_cmd)}\n"
+        f"Exit code: {sacct_code}\n\n"
+        f"```text\n{sacct_text or '(none)'}\n```\n",
+        encoding="utf-8",
+    )
+    return active
+
+
+def wait_for_slurm_quiescence(args: argparse.Namespace, state: dict) -> None:
+    if args.no_wait_for_slurm or args.dry_run:
+        update_job_status(args.slurm_user, args.sacct_lookback_h)
+        return
+
+    while update_job_status(args.slurm_user, args.sacct_lookback_h):
+        print(f"[{now()}] active Slurm jobs detected; waiting {args.slurm_wait_poll_s}s before next research cycle", flush=True)
+        poll_telegram_comments(state, args.dry_run)
+        save_state(state)
+        time.sleep(args.slurm_wait_poll_s)
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -285,6 +354,7 @@ def cycle(args: argparse.Namespace, state: dict) -> None:
     cycle_id = int(state.get("cycle", 0)) + 1
     print(f"[{now()}] cycle {cycle_id} start", flush=True)
 
+    wait_for_slurm_quiescence(args, state)
     poll_telegram_comments(state, args.dry_run)
     save_state(state)
     run_agent("bio", f"Cycle {cycle_id}: research phase. Update /workspace/myresearch.", args.agent_timeout_s, args.dry_run, state, args.telegram_poll_interval_s)
@@ -338,6 +408,10 @@ def main() -> int:
     parser.add_argument("--orchestrator-timeout-s", type=int, default=21600)
     parser.add_argument("--report-interval-s", type=int, default=43200)
     parser.add_argument("--telegram-poll-interval-s", type=int, default=60)
+    parser.add_argument("--slurm-user", default=os.environ.get("USER", "aw1907"))
+    parser.add_argument("--slurm-wait-poll-s", type=int, default=1800)
+    parser.add_argument("--sacct-lookback-h", type=int, default=24)
+    parser.add_argument("--no-wait-for-slurm", action="store_true", help="Start the next research cycle even if Slurm jobs are active.")
     parser.add_argument("--git-remote", default="git@github.com:aawingate1/MindEyeV2.git")
     parser.add_argument("--git-branch", default="codex2")
     args = parser.parse_args()
