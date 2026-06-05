@@ -3305,3 +3305,61 @@ Pending next actions:
 
 Telegram-ready update:
 - Cycle 44 implemented the planned batch-local CLIP margin anti-collapse objective and diagnostics in `Train.py`, with no-effect defaults and training-batch-only positives/impostors. Compile and Slurm syntax checks passed. A first 1-epoch smoke exposed an existing scheduler bug (`pct_start=2/num_epochs`), so the smoke was corrected to 3 epochs. Corrected smoke job `9263912` completed both `margin0` and `margin_low` rows in `00:05:07`, MaxRSS about `21.5G`, with finite margin diagnostics and saved smoke checkpoints. Full subject 5/7 four-row training array `9264132` has been submitted and is pending on the GPU partition; no final metrics or plots are available yet. Next report should parse `9264132` logs, run evaluation for completed checkpoints, and compare `margin_low - margin0` with the Cycle 44 rank/margin diagnostic.
+
+## 2026-06-05 Cycle 45
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Recovered the live Slurm state for Cycle 44 training array `9264132_[0-3]`.
+- Completed the protected subject 5/7 `margin0` and `margin_low` training authentication.
+- Launched the unchanged planned enhanced evaluator for all four completed checkpoints.
+- Did not run a new model branch, new objective, subject 1/2 scale-up, margin grid, generator/refiner change, or any diagnostic before evaluator artifacts existed.
+
+Code/config changes:
+- No code changes were made in Cycle 45.
+- No Slurm script changes were made in Cycle 45.
+
+Training job recovery:
+
+| task | model | state | exit | elapsed | node | MaxRSS | stdout | stderr | checkpoint evidence |
+|---|---|---:|---:|---:|---|---:|---|---|---|
+| `9264132_0` | `cycle44_subj05_margin0_1sess_150ep` | `COMPLETED` | `0:0` | `02:09:00` | `della-l04g6` | `21614388K` | `/src/slurms/c44_margin_s57_9264132_0.out` | `/src/slurms/c44_margin_s57_9264132_0.err` | log repeatedly reports saved `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_subj05_margin0_1sess_150ep/last` |
+| `9264132_1` | `cycle44_subj05_margin_low_1sess_150ep` | `COMPLETED` | `0:0` | `02:07:34` | `della-l01g15` | `21615088K` | `/src/slurms/c44_margin_s57_9264132_1.out` | `/src/slurms/c44_margin_s57_9264132_1.err` | log repeatedly reports saved `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_subj05_margin_low_1sess_150ep/last` |
+| `9264132_2` | `cycle44_subj07_margin0_1sess_150ep` | `COMPLETED` | `0:0` | `02:08:00` | `della-l04g9` | `21592568K` | `/src/slurms/c44_margin_s57_9264132_2.out` | `/src/slurms/c44_margin_s57_9264132_2.err` | log repeatedly reports saved `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_subj07_margin0_1sess_150ep/last` |
+| `9264132_3` | `cycle44_subj07_margin_low_1sess_150ep` | `COMPLETED` | `0:0` | `02:06:58` | `della-l05g7` | `21591664K` | `/src/slurms/c44_margin_s57_9264132_3.out` | `/src/slurms/c44_margin_s57_9264132_3.err` | log repeatedly reports saved `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_subj07_margin_low_1sess_150ep/last` |
+
+Final training/eval-loop metrics at epoch 149:
+
+| model | test blurry PixCorr | test loss | test fwd/bwd retrieval | train feature std mean | train effective rank | train offdiag pred cosine | train positive sim | train hardest sim | train positive-hardest margin | raw margin loss | scaled margin contribution | test feature std mean | test effective rank | test offdiag pred cosine | test positive-hardest margin |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 `margin0` | `0.193` | `14.3` | truncated in tqdm line | `0.0011022383` | `21.901299` | `0.10959551` | `0.074033676` | `0.0041376545` | `0.069897067` | `0` | `0` | `0.00085591699` | `161.41522` | `0.48071289` | `0.0015611649` |
+| subj05 `margin_low` | `0.197` | `14.4` | truncated in tqdm line | `0.0010980947` | `21.904828` | `0.11273587` | `0.074974798` | `0.0050848376` | `0.069885254` | `0` | `0` | `0.00084565196` | `161.77051` | `0.49121094` | `0.00096940994` |
+| subj07 `margin0` | `0.226` | `14.2` | truncated in tqdm line | `0.0010849848` | `21.860065` | `0.1107099` | `0.082596317` | `0.014253924` | `0.068351499` | `0` | `0` | `0.00081836735` | `160.87404` | `0.50488281` | `0.001534462` |
+| subj07 `margin_low` | `0.230` | `14.2` | truncated in tqdm line | `0.0010801024` | `21.86443` | `0.11590379` | `0.079987557` | `0.011250034` | `0.068733461` | `0` | `0` | `0.00080445281` | `159.9476` | `0.51904297` | `0.0013656616` |
+
+Training observations:
+- All four rows reached `100%|150/150` with no `Traceback`, `RuntimeError`, CUDA OOM, or failed-state evidence in stderr.
+- The nonzero margin term was active earlier in training but was zero by epoch 149 for the final sampled training batch, indicating the batch-local hinge was satisfied in that batch.
+- Same-subject final test diagnostic differences were small: subject 5 `margin_low` had slightly lower test feature std, slightly higher effective rank, higher offdiag cosine, and lower positive-hardest margin than `margin0`; subject 7 `margin_low` had lower test feature std, lower effective rank, higher offdiag cosine, and slightly lower positive-hardest margin than `margin0`.
+- These are mechanism checks only. Per `/plan.md`, protected enhanced evaluator metrics decide success.
+
+Evaluation launched:
+- Submitted the unchanged planned evaluator with `sbatch /src/cycle44_margin_eval_s57.slurm`.
+- Evaluator job: `9271345_[0-3]`, requested one A100, `64G`, `04:00:00`.
+- Planned rows are the same four completed training rows: subject 5 `margin0`, subject 5 `margin_low`, subject 7 `margin0`, subject 7 `margin_low`.
+- Latest check at `2026-06-05 17:17:49 EDT`: evaluator still `PENDING`, no node assigned, no evaluator stdout/stderr files yet, and no Cycle 44 enhanced tensors or final CSVs yet.
+
+Diagnostics status:
+- `/src/cycle44_rank_margin_diagnostics.py` was not run because evaluator artifacts do not exist yet and the script is designed to refuse active scheduler jobs.
+- Required post-eval artifact checks remain pending: `evals/<model>/<model>_all_enhancedrecons.pt` shape, final `/src/tables/<model>_all_enhancedrecons.csv`, full metric vector, replayed BrainRet agreement, and same-subject `margin_low - margin0` rank/margin summaries.
+
+Conclusions:
+- Cycle 45 completed the training recovery and found no operational training failures; no relaunch is needed for `9264132_[0-3]`.
+- The next valid action is to wait for evaluator job `9271345_[0-3]`, parse its logs, authenticate enhanced recon tensors and final CSVs, then run `/src/cycle44_rank_margin_diagnostics.py`.
+- No scientific success/failure claim can be made yet because protected enhanced evaluator metrics are still missing.
+
+Recommended next research questions:
+- Do the four Cycle 44 evaluator rows start and finish under the 4-hour request?
+- Do `margin_low - margin0` refined BrainRet/ImageRet and visual metrics improve, preserve, or regress separately for subject 5 and subject 7?
+- Does the evaluator-side rank/margin replay match final CSV BrainRet within the established `~0.002` tolerance?
