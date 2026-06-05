@@ -2692,3 +2692,93 @@ Recommended next research questions:
 - Do `8936092_[0-3]` complete with finite neighbor diagnostics and no operational failures?
 - Does `neighbor_low - neighbor0` improve refined BrainRet by about `+0.02` in at least one weak subject while preserving ImageRet, CLIP, Inception, VC, HigherVis, and lower-is-better EfficientNet/SwAV distances?
 - If refined BrainRet still fails despite improved neighbor diagnostics, close this sparse local-neighborhood family rather than widening to weight grids or architecture changes.
+
+## Cycle 38 recovery/readout - 2026-06-05
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is due.
+- Scope was recovery, authentication, and interpretation of the four protected sparse teacher-neighbor rows: `cycle38_subj05_neighbor0_1sess_150ep`, `cycle38_subj05_neighbor_low_1sess_150ep`, `cycle38_subj07_neighbor0_1sess_150ep`, and `cycle38_subj07_neighbor_low_1sess_150ep`.
+- No new mechanism, retraining, evaluator rerun, subject broadening, topology weight grid, refiner/generator change, or retrieval-pool change was launched.
+
+Code/config changes:
+- None.
+
+Commands run:
+- `sacct -j 8936092,8936093 --format=JobIDRaw,JobID,JobName%45,State,ExitCode,Elapsed,NodeList,ReqMem,MaxRSS,StdOut,StdErr -P`
+- Inspected `/src/slurms/c38_neighbor_s57_8936092_{0,1,2,3}.out/.err`.
+- Inspected `/src/slurms/c38_neighbor_eval_s57_8936093_{0,1,2,3}.out/.err`.
+- Loaded `/src/evals/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep/*_all_enhancedrecons.pt`.
+- Parsed `/src/tables/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+
+Scheduler/accounting readout:
+- Training array `8936092_[0-3]` completed cleanly:
+  - `8936092_0` / `cycle38_subj05_neighbor0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:08:47`, node `della-l02g9`, requested `64G`, batch MaxRSS `21470840K`, stdout `/src/slurms/c38_neighbor_s57_8936092_0.out`, stderr `/src/slurms/c38_neighbor_s57_8936092_0.err`.
+  - `8936092_1` / `cycle38_subj05_neighbor_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:08:48`, node `della-l02g3`, requested `64G`, batch MaxRSS `23067088K`, stdout `/src/slurms/c38_neighbor_s57_8936092_1.out`, stderr `/src/slurms/c38_neighbor_s57_8936092_1.err`.
+  - `8936092_2` / `cycle38_subj07_neighbor0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:07:56`, node `della-l01g16`, requested `64G`, batch MaxRSS `21598284K`, stdout `/src/slurms/c38_neighbor_s57_8936092_2.out`, stderr `/src/slurms/c38_neighbor_s57_8936092_2.err`.
+  - `8936092_3` / `cycle38_subj07_neighbor_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:07:43`, node `della-l02g12`, requested `64G`, batch MaxRSS `21454696K`, stdout `/src/slurms/c38_neighbor_s57_8936092_3.out`, stderr `/src/slurms/c38_neighbor_s57_8936092_3.err`.
+- Enhanced evaluator array `8936093_[0-3]` completed cleanly:
+  - `8936093_0` / `cycle38_subj05_neighbor0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:29:18`, node `della-l03g7`, requested `64G`, batch MaxRSS `49465248K`, stdout `/src/slurms/c38_neighbor_eval_s57_8936093_0.out`, stderr `/src/slurms/c38_neighbor_eval_s57_8936093_0.err`.
+  - `8936093_1` / `cycle38_subj05_neighbor_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:26:49`, node `della-l01g14`, requested `64G`, batch MaxRSS `49259544K`, stdout `/src/slurms/c38_neighbor_eval_s57_8936093_1.out`, stderr `/src/slurms/c38_neighbor_eval_s57_8936093_1.err`.
+  - `8936093_2` / `cycle38_subj07_neighbor0_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:27:41`, node `della-l02g10`, requested `64G`, batch MaxRSS `49017780K`, stdout `/src/slurms/c38_neighbor_eval_s57_8936093_2.out`, stderr `/src/slurms/c38_neighbor_eval_s57_8936093_2.err`.
+  - `8936093_3` / `cycle38_subj07_neighbor_low_1sess_150ep`: `COMPLETED`, exit `0:0`, elapsed `02:31:24`, node `della-l03g7`, requested `64G`, batch MaxRSS `46256976K`, stdout `/src/slurms/c38_neighbor_eval_s57_8936093_3.out`, stderr `/src/slurms/c38_neighbor_eval_s57_8936093_3.err`.
+
+Checkpoint/artifact authentication:
+- Training logs show each row loaded the official multisubject initialization from `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj0{5,7}/last.pth` and repeatedly saved `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last`.
+- The interactive container cannot currently stat `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/.../last.pth` or `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/.../last.pth`; this is an interactive observability gap for checkpoint byte/load verification after completion. It is partially mitigated by the clean dependent evaluator completion and logs showing successful checkpoint use on compute.
+- All four training rows logged sparse-neighbor provenance exactly as required: `training_only=True`, `shared1000_or_new_test_used=False`, `test_sources_used=[]`.
+- Enhanced tensors exist and load as finite `torch.float32` tensors:
+  - `cycle38_subj05_neighbor0_1sess_150ep`: `/src/evals/cycle38_subj05_neighbor0_1sess_150ep/cycle38_subj05_neighbor0_1sess_150ep_all_enhancedrecons.pt`, shape `(1000, 3, 256, 256)`, min `0.0`, max `1.0`, mean `0.515476`.
+  - `cycle38_subj05_neighbor_low_1sess_150ep`: `/src/evals/cycle38_subj05_neighbor_low_1sess_150ep/cycle38_subj05_neighbor_low_1sess_150ep_all_enhancedrecons.pt`, shape `(1000, 3, 256, 256)`, min `0.0`, max `1.0`, mean `0.511789`.
+  - `cycle38_subj07_neighbor0_1sess_150ep`: `/src/evals/cycle38_subj07_neighbor0_1sess_150ep/cycle38_subj07_neighbor0_1sess_150ep_all_enhancedrecons.pt`, shape `(1000, 3, 256, 256)`, min `0.0`, max `1.0`, mean `0.507720`.
+  - `cycle38_subj07_neighbor_low_1sess_150ep`: `/src/evals/cycle38_subj07_neighbor_low_1sess_150ep/cycle38_subj07_neighbor_low_1sess_150ep_all_enhancedrecons.pt`, shape `(1000, 3, 256, 256)`, min `0.0`, max `1.0`, mean `0.526583`.
+- Evaluator logs confirmed `final_evaluations.py` consumed enhanced tensors via the expected `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` line for all four rows.
+- Final CSVs exist under `/src/tables` for all four rows.
+
+Final training diagnostics from completed progress logs:
+
+| row | test loss | test blurry PixCorr | test fwd | test bwd | train blurry PixCorr | train bwd | train neighbor loss | train scaled neighbor loss | test neighbor loss | k | test NN@1 | test NN@5 | test NN@10 | test teacher-top1 median rank | test MRR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cycle38_subj05_neighbor0_1sess_150ep` | 14.3 | 0.193 | 0.670 | 0.583 | 0.801 | 1.000 | 2.46 | 0.00000 | 2.20 | 5 | 0.103 | 0.170 | 0.226 | 20 | 0.195 |
+| `cycle38_subj05_neighbor_low_1sess_150ep` | 14.5 | 0.181 | 0.657 | 0.537 | 0.809 | 1.000 | 2.25 | 0.00225 | 1.99 | 5 | 0.113 | 0.176 | 0.229 | 18 | 0.207 |
+| `cycle38_subj07_neighbor0_1sess_150ep` | 14.2 | 0.226 | 0.730 | 0.563 | 0.788 | 1.000 | 2.48 | 0.00000 | 2.17 | 5 | 0.050 | 0.130 | 0.160 | 39 | 0.118 |
+| `cycle38_subj07_neighbor_low_1sess_150ep` | 14.4 | 0.230 | 0.723 | 0.527 | 0.788 | 1.000 | 2.29 | 0.00229 | 2.00 | 5 | 0.063 | 0.132 | 0.171 | 38 | 0.133 |
+
+Training diagnostic interpretation:
+- `neighbor0` scaled neighbor contribution is exactly zero in both subjects.
+- `neighbor_low` has finite low-magnitude scaled contribution, `0.00225-0.00229`.
+- The sparse-neighbor objective moved the intended diagnostics in the expected direction: lower raw neighbor loss, modestly higher test NN overlap, better teacher-top1 median rank, and higher MRR in both subjects.
+- The progress display did not expose final `train/loss` or train forward retrieval in the retained 1200-character tqdm line; final test loss, train blurry PixCorr, train bwd retrieval, and neighbor diagnostics were available.
+
+Refined enhanced-evaluator metric table:
+
+| row | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `cycle38_subj05_neighbor0_1sess_150ep` | 0.192674 | 0.406933 | 0.846794 | 0.916086 | 0.856197 | 0.840533 | 0.768113 | 0.431212 | 0.648778 | 0.552778 | 0.416381 | 0.351920 | 0.355988 | 0.341006 | 0.315086 | 0.423627 |
+| `cycle38_subj05_neighbor_low_1sess_150ep` | 0.182719 | 0.408793 | 0.842659 | 0.915971 | 0.855814 | 0.841298 | 0.768952 | 0.435982 | 0.646667 | 0.533000 | 0.414058 | 0.349629 | 0.352020 | 0.336031 | 0.308302 | 0.421438 |
+| `cycle38_subj07_neighbor0_1sess_150ep` | 0.194279 | 0.404695 | 0.829048 | 0.894047 | 0.785077 | 0.770978 | 0.828250 | 0.477893 | 0.680556 | 0.542000 | 0.321338 | 0.321689 | 0.324969 | 0.316007 | 0.281305 | 0.306982 |
+| `cycle38_subj07_neighbor_low_1sess_150ep` | 0.201270 | 0.404336 | 0.819063 | 0.884962 | 0.782269 | 0.782230 | 0.826863 | 0.472738 | 0.684333 | 0.507222 | 0.318243 | 0.312592 | 0.312030 | 0.306041 | 0.273007 | 0.305419 |
+
+Same-subject `neighbor_low - neighbor0` deltas:
+
+| subject | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet dist ↓ | SwAV dist ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | -0.009955 | +0.001860 | -0.004135 | -0.000115 | -0.000383 | +0.000766 | +0.000840 | +0.004770 | -0.002111 | -0.019778 | -0.002323 | -0.002291 | -0.003967 | -0.004975 | -0.006785 | -0.002189 |
+| subj07 | +0.006991 | -0.000359 | -0.009985 | -0.009085 | -0.002808 | +0.011252 | -0.001386 | -0.005154 | +0.003778 | -0.034778 | -0.003095 | -0.009097 | -0.012939 | -0.009966 | -0.008298 | -0.001563 |
+
+Interpretation against success criteria:
+- Subject 5 fails. BrainRet moved `-0.019778` rather than the required about `+0.02`. ImageRet was nearly preserved at `-0.002111`, CLIP slightly improved, and SSIM slightly improved, but PixCorr, VC, HigherVis, AlexNet, and lower-is-better EffNet/SwAV worsened.
+- Subject 7 fails. BrainRet moved `-0.034778`. ImageRet improved slightly at `+0.003778`, CLIP improved by `+0.011252`, and lower-is-better EffNet/SwAV improved, but Inception, AlexNet, VC, V1-V4, and HigherVis regressed.
+- The sparse-neighbor training diagnostics improved as intended, so the implementation appears to apply the local objective and alter predicted-CLIP neighborhood behavior. That did not transfer to the protected refined BrainRet outcome.
+
+Decision:
+- Neither subject passes. Because neighbor diagnostics moved in the intended direction while refined BrainRet failed in both subjects, close this sparse local-neighborhood family as mechanistically informative but practically insufficient.
+- Do not run topology weight grids, stronger topology losses, adapters plus topology, ROI routing, routers, MoE, CLIP-layer fusion, generator/refiner edits, captions, VLM correction, temporal decoding, hard voxel pruning, reliability-prior revival, or subject 1/2 scale-up from this result.
+- No rerun is needed for these four protected rows: scheduler, evaluator, enhanced tensor, CSV, and metric-path authentication are complete. The only residual caveat is direct interactive checkpoint stat/load visibility after jobs completed.
+
+Recommended next research questions:
+- What non-topology mechanism can target weak-subject BrainRet without relying on predicted-CLIP local geometry, given that both full-pairwise topology and sparse teacher-neighbor topology improved diagnostics but failed refined BrainRet?
+- Are the BrainRet regressions caused by reconstruction/refiner interactions downstream of predicted CLIP rather than by predicted-CLIP retrieval itself?
+- Should future plans prioritize post-hoc error decomposition of refined BrainRet versus ImageRet/CLIP before any new training branch?
+
+Telegram-ready update:
+Cycle 38 recovery/readout is complete. Training array `8936092_[0-3]` and enhanced evaluator array `8936093_[0-3]` all completed with exit `0:0`; training rows ran about 2:08 with MaxRSS 21.5-23.1 GB, evaluator rows ran 2:26-2:31 with MaxRSS 46.3-49.5 GB. All enhanced tensors exist at `/src/evals/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep/*_all_enhancedrecons.pt`, load as finite `(1000,3,256,256)` float32 tensors, and `final_evaluations.py` consumed the enhanced path. Result is negative: subj05 `neighbor_low - neighbor0` BrainRet `-0.019778`, ImageRet `-0.002111`, HigherVis `-0.002189`; subj07 BrainRet `-0.034778`, ImageRet `+0.003778`, HigherVis `-0.001563`. The sparse-neighbor diagnostics improved in training, but protected refined BrainRet failed in both weak subjects. Close the sparse local-neighborhood topology family; do not run weight grids or scale to subjects 1/2.
