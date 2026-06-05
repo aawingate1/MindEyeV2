@@ -3153,3 +3153,82 @@ Recommended next research questions:
 - Future diagnostics should report top-1 preservation, hardest-impostor margins, and rank-1-to-rank>1 transition counts directly, not only mean rank.
 - Any future training mechanism must protect predicted-CLIP variance/effective rank, off-diagonal similarity, hardest-impostor margins, and sampled top-1 BrainRet, not just anchor cosine or average norm.
 - Do not continue the prior-preservation branch or run a prior-weight grid from this result.
+
+## 2026-06-05 Cycle 43
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Instrumentation-only evaluator-side rank/margin diagnostics for completed Cycle 40 subject 5/7 prior-preservation rows.
+- No training, no new model branch, no prior-weight grid, no generator/refiner/diffusion-prior change, no subject 1/2 scale-up, and no `sbatch` job was launched.
+- `final_evaluations.py` was inspected but not edited; the final metric CSV schema remains unchanged. The implementation is a separate read-only companion script.
+
+Preflight:
+- `/job-status.md` was not present in this workspace. Scheduler state was authenticated with `squeue -u "$USER"`, which showed no active jobs.
+- Required Cycle 40 eval directories and final CSVs exist for:
+  - `cycle40_subj05_prior0_1sess_150ep`
+  - `cycle40_subj05_prior_low_1sess_150ep`
+  - `cycle40_subj07_prior0_1sess_150ep`
+  - `cycle40_subj07_prior_low_1sess_150ep`
+- All four `all_clipvoxels` tensors load as finite `torch.float16` tensors with shape `(1000, 256, 1664)`.
+- Existing teacher cache reused: `/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt`. No new large teacher cache, tensor, checkpoint, or model weight was written.
+
+Code/config changes:
+- Added `/src/cycle43_rank_margin_diagnostics.py`.
+- The script reads completed evaluator artifacts only, replays the protected `BrainRet` path as saved `all_clipvoxels` versus true image OpenCLIP embeddings under the final evaluator's `30 x 300` sampled top-1 protocol, and writes compact rank/margin CSV/JSON diagnostics under `/src/tables/cycle43_rank_margin_diagnostics/`.
+- Per-model CSV columns include `subject`, `model_name`, `eval_index`, `image_id`, `positive_similarity`, `hardest_impostor_similarity`, `hardest_impostor_index`, `margin`, `full_pool_rank`, `sampled_top1_success_rate`, `sampled_rank_mean`, and `sampled_rank_median`.
+- Same-subject `prior_low - prior0` delta CSVs include `delta_positive_similarity`, `delta_hardest_impostor_similarity`, `delta_margin`, `delta_full_pool_rank`, `delta_sampled_top1_success_rate`, `rank1_to_not1`, and `not1_to_rank1`.
+
+Commands and validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle43_rank_margin_diagnostics.py`
+- `/src/fmri/bin/python /src/cycle43_rank_margin_diagnostics.py --data_path=/src --outdir=/src/tables/cycle43_rank_margin_diagnostics`
+- Output row-count validation:
+  - Four per-model CSVs, each `1000` data rows.
+  - `subj05_prior_low_vs_prior0_rank_margin_delta.csv`, `1000` data rows.
+  - `subj07_prior_low_vs_prior0_rank_margin_delta.csv`, `1000` data rows.
+  - JSON summary: `/src/tables/cycle43_rank_margin_diagnostics/cycle43_rank_margin_summary.json`.
+
+Outputs:
+- `/src/tables/cycle43_rank_margin_diagnostics/cycle40_subj05_prior0_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/cycle40_subj05_prior_low_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/cycle40_subj07_prior0_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/cycle40_subj07_prior_low_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/subj05_prior_low_vs_prior0_rank_margin_delta.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/subj07_prior_low_vs_prior0_rank_margin_delta.csv`
+- `/src/tables/cycle43_rank_margin_diagnostics/cycle43_rank_margin_summary.json`
+- Total output size is small, about `815K`.
+
+Replay validation against Cycle 42:
+
+| subject | CSV BrainRet delta | replayed sampled top-1 delta | replay minus CSV | tolerance |
+|---|---:|---:|---:|---:|
+| subj05 | -0.480556 | -0.481333 | -0.000778 | pass, within 0.002 |
+| subj07 | -0.486111 | -0.485778 | +0.000333 | pass, within 0.002 |
+
+Rank/margin readout, `prior_low - prior0`:
+
+| subject | full-pool rank delta mean | full-pool rank delta median | margin delta mean | margin delta median | sampled success-rate delta mean | sampled success-rate delta median | rank1_to_not1 | not1_to_rank1 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +142.922 | +79.0 | -0.021515 | -0.021144 | -0.484099 | -0.428571 | 371 / 1000 | 2 / 1000 |
+| subj07 | +148.302 | +89.5 | -0.024302 | -0.024113 | -0.487711 | -0.444444 | 388 / 1000 | 2 / 1000 |
+
+Direct ImageRet/BrainRet rank summaries:
+
+| row | BrainRet full-pool rank mean | BrainRet median | BrainRet top1 frac | ImageRet full-pool rank mean | ImageRet median | ImageRet top1 frac |
+|---|---:|---:|---:|---:|---:|---:|
+| subj05 prior0 | 14.202 | 2.0 | 0.399 | 9.714 | 1.0 | 0.502 |
+| subj05 prior_low | 157.124 | 87.0 | 0.030 | 8.134 | 2.0 | 0.479 |
+| subj07 prior0 | 20.197 | 2.0 | 0.401 | 10.763 | 1.0 | 0.548 |
+| subj07 prior_low | 168.499 | 100.0 | 0.015 | 12.929 | 2.0 | 0.493 |
+
+Correlations with sampled success-rate delta:
+- subj05: margin delta `+0.408`, full-pool rank delta `+0.223`, enhanced evalmix PixCorr delta `-0.015`.
+- subj07: margin delta `+0.431`, full-pool rank delta `+0.238`, enhanced evalmix PixCorr delta `+0.066`.
+
+ROI/category diagnostics:
+- Per-image ROI/category localization is not available from saved Cycle 40 artifacts. `final_evaluations.py` writes aggregate GNet ROI correlations only, and no per-image ROI tensor is saved. This limitation was recorded in the JSON summary and does not block rank/margin instrumentation.
+
+Conclusion:
+- Cycle 43 succeeds. Rank/margin observability is now available as a normal compact diagnostic artifact set for the completed Cycle 40 rows, with subject 5 and subject 7 kept separate.
+- The replayed sampled top-1 deltas match Cycle 42 within tolerance, and the new outputs expose the core failure mode directly: large positive rank worsening, strongly negative hardest-impostor margin deltas, and hundreds of rank-1 to rank-greater-than-1 transitions under `prior_low`.
+- Future training proposals should treat these diagnostics as acceptance proxies before considering any renewed anti-collapse objective or other model branch.
