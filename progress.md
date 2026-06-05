@@ -2782,3 +2782,93 @@ Recommended next research questions:
 
 Telegram-ready update:
 Cycle 38 recovery/readout is complete. Training array `8936092_[0-3]` and enhanced evaluator array `8936093_[0-3]` all completed with exit `0:0`; training rows ran about 2:08 with MaxRSS 21.5-23.1 GB, evaluator rows ran 2:26-2:31 with MaxRSS 46.3-49.5 GB. All enhanced tensors exist at `/src/evals/cycle38_subj0{5,7}_neighbor{0,_low}_1sess_150ep/*_all_enhancedrecons.pt`, load as finite `(1000,3,256,256)` float32 tensors, and `final_evaluations.py` consumed the enhanced path. Result is negative: subj05 `neighbor_low - neighbor0` BrainRet `-0.019778`, ImageRet `-0.002111`, HigherVis `-0.002189`; subj07 BrainRet `-0.034778`, ImageRet `+0.003778`, HigherVis `-0.001563`. The sparse-neighbor diagnostics improved in training, but protected refined BrainRet failed in both weak subjects. Close the sparse local-neighborhood topology family; do not run weight grids or scale to subjects 1/2.
+
+## Cycle 39 - 2026-06-05
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Scope was post-hoc failure decomposition of the completed Cycle 38 sparse teacher-neighbor rows only. No training, topology branch, adapter, routing, generator/refiner edit, caption/VLM branch, reliability branch, or subject 1/2 scale-up was launched.
+
+Preflight:
+- `/job-status.md` is absent in this container: exact missing path `/job-status.md`. `squeue -u $USER` showed no active jobs at both start and end of the cycle.
+- The four Cycle 38 directories under `/src/evals` exist:
+  - `/src/evals/cycle38_subj05_neighbor0_1sess_150ep`
+  - `/src/evals/cycle38_subj05_neighbor_low_1sess_150ep`
+  - `/src/evals/cycle38_subj07_neighbor0_1sess_150ep`
+  - `/src/evals/cycle38_subj07_neighbor_low_1sess_150ep`
+- For each row, evaluator tensors `all_clipvoxels`, `all_recons`, `all_enhancedrecons`, `all_blurryrecons`, and `all_predcaptions` exist. Final CSVs exist under `/src/tables`.
+- Local load/finite checks confirmed, for example, subject 5 neighbor0: `all_clipvoxels` shape `(1000,256,1664)` `torch.float16`, finite; `all_recons`, `all_blurryrecons`, and `all_enhancedrecons` shape `(1000,3,256,256)` `torch.float32`, finite. The subject 7 resumed diagnostic JSON contains the same authenticated shape/dtype/finite checks for both subject 7 rows.
+
+Code/config changes:
+- Added `/src/cycle39_failure_decomposition.py`.
+  - Reads completed Cycle 38 artifacts only.
+  - Computes deterministic full-pool direct predicted-CLIP ranks from saved `all_clipvoxels`.
+  - Computes per-image PixCorr for `all_blurryrecons`, `all_recons`, raw `all_enhancedrecons`, and `enhanced_evalmix` matching the final evaluator's `0.75*enhanced + 0.25*blurry` image.
+  - Writes per-image CSVs and JSON summaries under `/src/tables/cycle39_failure_decomposition/`.
+  - Includes a cacheable OpenCLIP stage-rank path, but also a fallback `--skip_stage_clip_features` mode used here because visible `/src` Slurm jobs fail before Python starts.
+- Added `/src/cycle39_failure_decomposition.slurm`, a 1-hour diagnostic wrapper. The `/src` Slurm launch path failed before logs; see jobs below.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle39_failure_decomposition.py` passed.
+- `bash -n /src/cycle39_failure_decomposition.slurm` passed.
+
+Commands/jobs launched:
+- `sbatch /src/cycle39_failure_decomposition.slurm` -> job `9238576`, requested one A100, `64G`, `01:00:00`. It failed immediately before Python/log creation: `FAILED`, exit `0:53`, elapsed `00:00:00`, node `della-l04g9`, stdout `/src/slurms/c39_failure_decomp_9238576.out`, stderr `/src/slurms/c39_failure_decomp_9238576.err`, no MaxRSS.
+- `/src` path smoke `9238599` also failed immediately: `FAILED`, exit `0:53`, elapsed `00:00:01`, node `della-l09g7`, requested `4G`, no MaxRSS. This isolates the failure to Slurm launch/path visibility, not the diagnostic Python.
+- Historical scratch-path smoke `9238612` completed: `COMPLETED`, exit `0:0`, elapsed `00:00:01`, node `della-l09g7`, requested `4G`, batch MaxRSS `960K`. Its logs are on compute-visible `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/...`, which remains invisible from the interactive shell; this matches earlier checkpoint/log observability gaps.
+- Local fallback runs:
+  - `/src/fmri/bin/python /src/cycle39_failure_decomposition.py --data_path=/src --outdir=/src/tables/cycle39_failure_decomposition --skip_stage_clip_features --topn=20`
+  - The first local fallback wrote subject 5 per-image output then exited before final JSON.
+  - Resumed subject 7 with `--subjects 7`, completed and wrote the subject 7 summary JSON.
+  - Combined both per-subject CSVs into `/src/tables/cycle39_failure_decomposition/cycle39_failure_decomposition_combined_fallback_summary.json`.
+
+Output artifacts:
+- `/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt`, copied/reused from Cycle 38 teacher cache, `1.6G`.
+- `/src/tables/cycle39_failure_decomposition/subj05_neighbor_low_vs_neighbor0_per_image.csv`, `1000` data rows.
+- `/src/tables/cycle39_failure_decomposition/subj07_neighbor_low_vs_neighbor0_per_image.csv`, `1000` data rows.
+- `/src/tables/cycle39_failure_decomposition/cycle39_failure_decomposition_combined_fallback_summary.json`, combined fallback summary.
+- `/src/tables/cycle39_failure_decomposition/cycle39_failure_decomposition_summary.json`, subject 7 resumed-run JSON.
+
+Direct predicted-CLIP full-pool retrieval, `neighbor_low - neighbor0` rank deltas; positive rank delta means worse:
+
+| subject | image-rank mean | image-rank median | image worse frac | image improved frac | brain-rank mean | brain-rank median | brain worse frac | brain improved frac |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +2.431 | 0.0 | 0.362 | 0.231 | +0.268 | 0.0 | 0.245 | 0.225 |
+| subj07 | +2.156 | 0.0 | 0.352 | 0.253 | +0.339 | 0.0 | 0.207 | 0.228 |
+
+Worst direct predicted-CLIP brain-rank regressions:
+- subj05 top examples `(eval_index, nsd_image_id, brain_rank_delta, image_rank_delta, enhanced_evalmix_pixcorr_delta)`: `(52,5602,+178,+36,-0.142865)`, `(394,29663,+171,+194,-0.032749)`, `(229,19181,+135,+8,+0.052862)`, `(906,65872,+84,+6,-0.047649)`, `(628,46136,+76,+5,+0.051395)`.
+- subj07 top examples: `(950,69030,+250,+256,+0.012450)`, `(179,14820,+135,+14,-0.032854)`, `(170,14179,+135,+34,+0.056189)`, `(637,46480,+110,+98,-0.016474)`, `(234,19573,+86,+38,+0.445446)`.
+
+Stage-wise PixCorr diagnostics, `neighbor_low - neighbor0`:
+
+| subject | blurry mean | recons mean | enhanced raw mean | enhanced evalmix mean | enhanced evalmix median | enhanced evalmix improved frac |
+|---|---:|---:|---:|---:|---:|---:|
+| subj05 | -0.003489 | -0.010272 | -0.010465 | -0.009919 | -0.004098 | 0.485 |
+| subj07 | -0.002091 | +0.007968 | +0.008202 | +0.006932 | +0.004238 | 0.513 |
+
+Stress subsets, using deterministic direct predicted-CLIP brain rank as the per-image BrainRet proxy:
+
+| subject | predclip/image rank preserved while brain rank worsened | enhanced-evalmix PixCorr improved while brain rank worsened | brain rank improved despite predclip/image rank worsening |
+|---|---:|---:|---:|
+| subj05 | 108 / 1000, mean brain-rank delta `+3.657` | 123 / 1000, mean brain-rank delta `+7.894`, mean PixCorr delta `+0.079212` | 75 / 1000, mean brain-rank delta `-5.760` |
+| subj07 | 75 / 1000, mean brain-rank delta `+6.800` | 107 / 1000, mean brain-rank delta `+12.598`, mean PixCorr delta `+0.106404` | 86 / 1000, mean brain-rank delta `-7.849` |
+
+Aggregate final CSV deltas retained from Cycle 38:
+- subj05: BrainRet `-0.019778`, ImageRet `-0.002111`, CLIP `+0.000766`, PixCorr `-0.009955`, VC `-0.002323`, HigherVis `-0.002189`.
+- subj07: BrainRet `-0.034778`, ImageRet `+0.003778`, CLIP `+0.011252`, PixCorr `+0.006991`, VC `-0.003095`, HigherVis `-0.001563`.
+
+ROI feasibility:
+- Per-image ROI localization is not available from saved Cycle 38 artifacts. `final_evaluations.py` uses `GNet8_Encoder`, computes ROI Pearson correlations, averages across voxels, and writes only aggregate CSV values for `nsd_general`, `V1`, `V2`, `V3`, `V4`, and `higher_vis`.
+- Extensive evaluator surgery was not performed in this cycle. Aggregate ROI evidence remains: both subjects regress in VC and HigherVis; subject 7 additionally shows broader V1-V4 regression.
+
+Interpretation:
+- The failure is at least partly upstream at the saved predicted-CLIP boundary: full-pool direct predicted-CLIP brain-rank mean worsened in both subjects, and 20-25% of images had worse brain-rank under `neighbor_low`.
+- The direct-rank medians are zero and stress subsets show many images where PixCorr or image-side rank improved while brain rank worsened, so this is not a simple uniform collapse. It is a sparse but consequential subject-alignment drift.
+- Stage-wise PixCorr does not explain the protected BrainRet failure: subject 7 improves PixCorr at reconstruction/enhancement stages while BrainRet and VC/HigherVis regress; subject 5 worsens PixCorr across stages but also has direct predicted-CLIP brain-rank drift before reconstruction.
+- Because stage OpenCLIP rank extraction could not be completed on the visible Slurm path, ImageRet/CLIP per-image stage ranks remain incomplete. The fallback evidence is still sufficient to classify Cycle 38 as upstream predicted-CLIP/subject-alignment drift with downstream low-level metrics unable to rescue or explain the final BrainRet regression.
+
+Conclusion and next research questions:
+- Do not revive sparse-neighbor topology, topology grids, or stronger topology loss from this result.
+- Future work should prioritize conservative prior-preserving or subject-alignment regularization anchored to the official multisubject initialization, not additional semantic/topology supervision.
+- If a future cycle needs per-image stage OpenCLIP ranks, first resolve the Slurm path split by making the compute-visible `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` artifacts visible from the interactive shell or writing a compute job that copies outputs back to `/src`.

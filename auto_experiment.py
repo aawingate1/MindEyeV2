@@ -44,6 +44,11 @@ AUTO_COMMIT_PATHS = [
     "src",
 ]
 
+MAX_GITHUB_FILE_BYTES = 100 * 1024 * 1024
+BLOCKED_GIT_PATH_SUFFIXES = (
+    "/all_images_openclip_bigG_flat_norm.pt",
+)
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -327,6 +332,24 @@ def git_auto_push(cycle_id: int, remote: str, branch: str, dry_run: bool = False
     if diff.returncode == 0:
         append(log_path, f"[{now()}] cycle {cycle_id}: no staged changes\n")
         return
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only", "-z"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout.decode("utf-8", errors="replace").split("\0")
+    blocked = []
+    for rel_path in [path for path in staged if path]:
+        abs_path = ROOT / rel_path
+        size = abs_path.stat().st_size if abs_path.exists() else 0
+        if size > MAX_GITHUB_FILE_BYTES or rel_path.endswith(BLOCKED_GIT_PATH_SUFFIXES):
+            blocked.append(f"{rel_path} ({size} bytes)")
+    if blocked:
+        subprocess.run(["git", "reset", "-q", "--", *[item.rsplit(" (", 1)[0] for item in blocked]], cwd=ROOT, check=True)
+        raise RuntimeError(
+            "Refusing to commit files that are too large for GitHub or are generated caches:\n"
+            + "\n".join(blocked)
+        )
     subprocess.run(
         ["git", "commit", "-m", f"Auto experiment cycle {cycle_id}"],
         cwd=ROOT,

@@ -21,3 +21,4 @@ Workflow:
 - Parse available Slurm .out/.err logs for test accuracy, losses, and failures.
 - Append a dated section to /progress.md covering code/config changes, commands or jobs launched, observed metrics, failures, conclusions, and recommended next research questions.
 - If the supervisor says a Telegram report is due, append a concise report-ready update to /progress.md. Bias toward describing visual plots or plot paths when available. The root supervisor sends Telegram messages; you do not have Telegram credentials.
+- Do not create or intentionally stage large generated tensors, checkpoints, cached embeddings, model weights, images, eval tensors, or other heavy artifacts for Git. Keep large artifacts on disk and summarize their paths/metrics in /progress.md. In particular, files named `all_images_openclip_bigG_flat_norm.pt` are generated caches and must not be committed.
