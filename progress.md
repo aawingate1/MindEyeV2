@@ -2979,3 +2979,109 @@ Conclusions:
 - Close this specific predicted-CLIP anchor-preservation setting.
 - Per `/plan.md`, do not widen into a prior-weight grid, topology revival, adapters, routers, MoE, CLIP-layer fusion, generator/refiner edits, caption/VLM correction, temporal decoding, hard voxel pruning, or reliability-prior revival as an immediate continuation from this result.
 - Next valid research question should return to interpreting why preserving anchor cosine destroys backward retrieval while leaving image-side evaluator metrics nearly unchanged, using existing artifacts only unless a new plan explicitly authorizes new experiments.
+
+## 2026-06-05 Cycle 41
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Diagnostic-only readout of completed Cycle 40 prior-preservation artifacts.
+- No training branch, prior-weight grid, topology/neighbor revival, adapter, router/MoE, ROI-routing model, CLIP-layer fusion, generator/refiner edit, caption/VLM correction, temporal decoding, hard voxel pruning, reliability-prior experiment, or subject 1/2 scale-up was launched.
+
+Scheduler/path preflight:
+- `/job-status.md` was absent in this workspace.
+- `squeue -u $USER` showed no active jobs at start; the diagnostic script also recorded `active_job_count=0`.
+- `/src` was visible and used as the artifact/source tree. No scratch fallback was needed.
+
+Code/config changes:
+- Added `/src/cycle41_prior_collapse_diagnostic.py`.
+- The script reuses the Cycle 39 artifact-only decomposition structure, compares Cycle 40 `prior_low` against same-subject `prior0`, and reads completed tensors/CSVs only.
+- Added diagnostics for direct predicted-CLIP full-pool ranks, token/feature norm distributions, effective rank/PCA spectrum summaries, predicted-feature self-similarity, true-pair and impostor similarities, positive-minus-impostor margins, per-image PixCorr stage deltas, stress subsets, and correlations with direct brain-rank deltas.
+- The script intentionally reuses the existing `/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt` teacher cache and does not copy or regenerate another large `all_images_openclip_bigG_flat_norm.pt` under the Cycle 41 output directory.
+
+Validation and commands run:
+- `/src/fmri/bin/python -m py_compile /src/cycle41_prior_collapse_diagnostic.py`
+- `/src/fmri/bin/python /src/cycle41_prior_collapse_diagnostic.py --data_path=/src --outdir=/src/tables/cycle41_prior_collapse_diagnostic --topn=20`
+- No `sbatch` command was run in Cycle 41.
+
+Artifact authentication:
+- All four required evaluator directories exist:
+  - `/src/evals/cycle40_subj05_prior0_1sess_150ep`
+  - `/src/evals/cycle40_subj05_prior_low_1sess_150ep`
+  - `/src/evals/cycle40_subj07_prior0_1sess_150ep`
+  - `/src/evals/cycle40_subj07_prior_low_1sess_150ep`
+- For all four rows, required tensors exist and load as finite tensors:
+  - `all_clipvoxels`: shape `(1000, 256, 1664)`, dtype `torch.float16`.
+  - `all_blurryrecons`, `all_recons`, and `all_enhancedrecons`: shape `(1000, 3, 256, 256)`, dtype `torch.float32`.
+- Image tensor ranges were finite and in expected ranges. Enhanced tensor min/max were `0.0/1.0`; means were subj05 prior0 `0.515476`, subj05 prior_low `0.515872`, subj07 prior0 `0.507720`, subj07 prior_low `0.520754`.
+- Final CSVs exist under `/src/tables` for all four rows.
+- Evaluator logs confirm `final_evaluations.py` consumed enhanced tensors via:
+  - `evals/cycle40_subj05_prior0_1sess_150ep/cycle40_subj05_prior0_1sess_150ep_all_enhancedrecons.pt`
+  - `evals/cycle40_subj05_prior_low_1sess_150ep/cycle40_subj05_prior_low_1sess_150ep_all_enhancedrecons.pt`
+  - `evals/cycle40_subj07_prior0_1sess_150ep/cycle40_subj07_prior0_1sess_150ep_all_enhancedrecons.pt`
+  - `evals/cycle40_subj07_prior_low_1sess_150ep/cycle40_subj07_prior_low_1sess_150ep_all_enhancedrecons.pt`
+
+Outputs:
+- `/src/tables/cycle41_prior_collapse_diagnostic/subj05_prior_low_vs_prior0_per_image.csv`, `1000` data rows.
+- `/src/tables/cycle41_prior_collapse_diagnostic/subj07_prior_low_vs_prior0_per_image.csv`, `1000` data rows.
+- `/src/tables/cycle41_prior_collapse_diagnostic/cycle41_prior_collapse_summary.json`.
+- Output directory size is about `889K`; no large teacher cache or reconstruction tensor was written there.
+
+Direct predicted-CLIP full-pool retrieval, `prior_low - prior0`; positive rank delta means worse:
+
+| subject | image-rank mean | image-rank median | image worse frac | image improved frac | brain-rank mean | brain-rank median | brain worse frac | brain improved frac |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +142.922 | +79.0 | 0.942 | 0.022 | -1.580 | 0.0 | 0.304 | 0.267 |
+| subj07 | +148.302 | +89.5 | 0.949 | 0.034 | +2.166 | 0.0 | 0.326 | 0.204 |
+
+Worst direct predicted-CLIP brain-rank regressions:
+- subj05 top examples include eval/image IDs `(51, 5583, +172 brain-rank delta, -169 image-rank delta, +0.0543 enhanced-evalmix PixCorr delta)`, `(6, 3164, +74, +171, +0.0150)`, `(566, 42648, +60, +113, -0.3163)`, `(690, 50500, +57, +14, -0.0472)`, `(906, 65872, +51, +163, -0.0241)`.
+- subj07 top examples are stored in the JSON/CSV; stress counts below summarize the pattern. The direct brain-rank damage is sparse relative to the catastrophic final BrainRet collapse.
+
+Feature calibration and separability:
+
+| subject | flat norm mean prior0 | flat norm mean prior_low | feature std mean prior0 | feature std mean prior_low | effective rank prior0 | effective rank prior_low | self offdiag cosine prior0 | self offdiag cosine prior_low |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | 397.299 | 349.141 | 0.3423 | 0.1355 | 47.662 | 41.410 | 0.4800 | 0.8976 |
+| subj07 | 374.990 | 350.133 | 0.3067 | 0.1234 | 46.638 | 41.094 | 0.5138 | 0.9128 |
+
+Pairwise predicted-CLIP/image similarity:
+
+| subject | true-pair sim prior0 | true-pair sim prior_low | image impostor sim prior0 | image impostor sim prior_low | image hardest margin prior0 | image hardest margin prior_low | brain hardest margin prior0 | brain hardest margin prior_low |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | 0.04115 | 0.06886 | 0.00385 | 0.04751 | -0.00303 | -0.02454 | -0.000272 | -0.000316 |
+| subj07 | 0.04893 | 0.06582 | 0.01327 | 0.04643 | -0.00285 | -0.02716 | +0.000587 | -0.000017 |
+
+Interpretation of calibration/separability:
+- `prior_low` increased true-pair similarity, matching the mechanical anchor-cosine story, but impostor similarity increased more. Predicted features became much more mutually similar: self off-diagonal cosine jumped to about `0.90`.
+- Feature variance and effective rank dropped in both subjects. This is a calibration/separability collapse, not a simple low-level reconstruction failure.
+- Direct predicted-CLIP image ranks collapsed for nearly all images. Direct predicted-CLIP brain ranks were mostly median-preserved and only sparse-regressed, so the final enhanced BrainRet collapse is not explained by a uniform full-pool direct brain-rank collapse.
+
+PixCorr stage diagnostics, `prior_low - prior0`:
+
+| subject | blurry mean | recons mean | enhanced raw mean | enhanced evalmix mean | enhanced evalmix median | enhanced evalmix improved frac |
+|---|---:|---:|---:|---:|---:|---:|
+| subj05 | +0.003849 | +0.001575 | +0.002343 | +0.003167 | +0.005282 | 0.518 |
+| subj07 | -0.004069 | +0.004552 | +0.004405 | +0.003199 | +0.003192 | 0.513 |
+
+Stress subsets:
+
+| subject | PixCorr improved while direct brain rank worsened | image rank preserved while direct brain rank worsened | direct brain rank improved despite image rank worsening |
+|---|---:|---:|---:|
+| subj05 | 167 / 1000, mean brain-rank delta `+6.41`, mean PixCorr delta `+0.1000` | 12 / 1000, mean brain-rank delta `+23.67` | 245 / 1000, mean brain-rank delta `-11.76` |
+| subj07 | 159 / 1000, mean brain-rank delta `+15.62`, mean PixCorr delta `+0.1074` | 21 / 1000, mean brain-rank delta `+38.33` | 192 / 1000, mean brain-rank delta `-10.82` |
+
+ROI feasibility:
+- Per-image ROI/category localization is not available from saved Cycle 40 artifacts.
+- `final_evaluations.py` uses `GNet8_Encoder`, computes ROI correlations, and writes aggregate values for `nsd_general`, `V1`, `V2`, `V3`, `V4`, and `higher_vis`; no per-image ROI tensor is saved.
+- Cycle 40 aggregate ROI evidence remains too blunt to explain the BrainRet collapse, especially because aggregate VC/HigherVis were mostly preserved or slightly improved while BrainRet collapsed.
+
+Mechanism classification:
+- Classify Cycle 40 as calibration/separability collapse at the predicted-CLIP boundary with downstream metric amplification.
+- The low prior loss pulled predictions toward a shared anchor direction and reduced norm/variance, but it compressed the 1000-image predicted-CLIP manifold. True-pair cosine increased, yet impostor cosine and predicted-predicted self-similarity increased enough to destroy direct image retrieval.
+- The protected final BrainRet collapse is larger than the direct predicted-CLIP brain-rank mean movement, so there is also a downstream/evaluator sensitivity component. However, generator/refiner explanations alone are closed because the saved predicted-CLIP representation is already badly miscalibrated and nonseparable.
+
+Decision and next-step recommendation:
+- Do not continue this prior-preservation branch, do not run a prior-weight grid, and do not scale to subjects 1/2.
+- Any future mechanism must preserve instance-level separability, feature variance/effective rank, and positive-impostor margins, not just cosine-to-anchor or average norm drift.
+- A justified next diagnostic, if requested by a future plan, would compare final BrainRet’s brain-encoder retrieval geometry against the direct saved predicted-CLIP geometry to locate the downstream amplification between compressed predicted CLIP and enhanced reconstruction evaluation.
