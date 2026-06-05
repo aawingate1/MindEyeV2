@@ -363,6 +363,26 @@ parser.add_argument(
     "--prior_preservation_detach_anchor", action=argparse.BooleanOptionalAction, default=True,
     help="Detach frozen-anchor predictions before computing preservation loss.",
 )
+parser.add_argument(
+    "--clip_margin_loss_weight", type=float, default=0.0,
+    help="Weight for batch-local positive-vs-hardest-impostor CLIP margin loss. Default 0 preserves behavior.",
+)
+parser.add_argument(
+    "--clip_margin_floor", type=float, default=0.02,
+    help="Hinge floor for positive similarity minus hardest eligible impostor similarity.",
+)
+parser.add_argument(
+    "--clip_margin_topk", type=int, default=8,
+    help="Use the hardest item from this many batch-local impostors.",
+)
+parser.add_argument(
+    "--clip_margin_exclude_teacher_topk", type=int, default=0,
+    help="Optionally exclude this many nearest image-CLIP teacher neighbors from impostor candidates.",
+)
+parser.add_argument(
+    "--clip_margin_log_every", type=int, default=1,
+    help="Print compact margin diagnostics every N epochs when margin logging is active.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -1071,6 +1091,66 @@ def prior_preservation_stats(current_clip, anchor_clip, pool="flat", detach_anch
     current_rep_norm = torch.linalg.vector_norm(current_features.float(), dim=-1).mean()
     return loss_prior_preservation, anchor_rep_norm, current_rep_norm, cosine_sim
 
+def effective_rank_from_features(features):
+    features = features.float()
+    if features.shape[0] < 2:
+        return features.new_tensor(1.)
+    centered = features - features.mean(dim=0, keepdim=True)
+    singular_values = torch.linalg.svdvals(centered)
+    singular_values = singular_values[singular_values > 1e-8]
+    if int(singular_values.numel()) == 0:
+        return features.new_tensor(1.)
+    probs = singular_values / singular_values.sum().clamp_min(1e-12)
+    entropy = -(probs * torch.log(probs.clamp_min(1e-12))).sum()
+    return torch.exp(entropy)
+
+def clip_margin_stats(pred_norm, target_norm, margin_floor=0.02, topk=8, exclude_teacher_topk=0):
+    n = pred_norm.shape[0]
+    zero = pred_norm.new_tensor(0.)
+    if n < 2:
+        return zero, {
+            "feature_std_mean": zero,
+            "effective_rank": pred_norm.new_tensor(1.),
+            "offdiag_pred_cosine": zero,
+            "positive_similarity": zero,
+            "hardest_impostor_similarity": zero,
+            "positive_minus_hardest_margin": zero,
+        }
+
+    pred_float = pred_norm.float()
+    target_float = target_norm.float()
+    eye = torch.eye(n, dtype=torch.bool, device=pred_norm.device)
+    sim = pred_float @ target_float.T
+    candidate_mask = eye.clone()
+    if int(exclude_teacher_topk) > 0 and n > 2:
+        teacher_sim = (target_float @ target_float.T).masked_fill(eye, -float("inf"))
+        kk_exclude = min(int(exclude_teacher_topk), max(1, n - 1))
+        teacher_neighbors = torch.topk(teacher_sim, k=kk_exclude, dim=1).indices
+        candidate_mask.scatter_(1, teacher_neighbors, True)
+    eligible_counts = (~candidate_mask).sum(dim=1)
+    if bool((eligible_counts == 0).any()):
+        candidate_mask = eye
+
+    neg_sim = sim.masked_fill(candidate_mask, -float("inf"))
+    kk = min(max(1, int(topk)), max(1, n - 1))
+    topk_vals = torch.topk(neg_sim, k=kk, dim=1).values
+    hardest = topk_vals[:, 0]
+    positive = sim.diag()
+    margins = positive - hardest
+    margin_loss = torch.relu(float(margin_floor) - margins).mean()
+
+    pred_self_sim = pred_float @ pred_float.T
+    offdiag_pred = offdiag_values(pred_self_sim)
+    stats = {
+        "feature_std_mean": pred_float.std(dim=0, unbiased=False).mean(),
+        "effective_rank": effective_rank_from_features(pred_float),
+        "offdiag_pred_cosine": offdiag_pred.mean(),
+        "positive_similarity": positive.mean(),
+        "hardest_impostor_similarity": hardest.mean(),
+        "positive_minus_hardest_margin": margins.mean(),
+    }
+    return margin_loss, stats
+
 def clip_neighbor_topology_stats(
     pred_norm,
     target_norm,
@@ -1240,6 +1320,13 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "prior_preservation_training_only": True,
       "prior_preservation_shared1000_or_new_test_used": False,
       "prior_preservation_test_sources_used": [],
+      "clip_margin_loss_weight": clip_margin_loss_weight,
+      "clip_margin_floor": clip_margin_floor,
+      "clip_margin_topk": clip_margin_topk,
+      "clip_margin_exclude_teacher_topk": clip_margin_exclude_teacher_topk,
+      "clip_margin_training_only": True,
+      "clip_margin_shared1000_or_new_test_used": False,
+      "clip_margin_test_sources_used": [],
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -1389,6 +1476,13 @@ if use_clip_neighbor_topology:
         "shared1000_or_new_test_used=False, test_sources_used=[]"
     )
 
+print(
+    "Batch-local CLIP margin diagnostics enabled: "
+    f"weight={clip_margin_loss_weight}, floor={clip_margin_floor}, "
+    f"topk={clip_margin_topk}, exclude_teacher_topk={clip_margin_exclude_teacher_topk}, "
+    "training_batch_only=True, shared1000_or_new_test_used=False, test_sources_used=[]"
+)
+
 
 # In[20]:
 
@@ -1454,6 +1548,15 @@ for epoch in progress_bar:
     prior_preservation_current_norm_total = 0.
     prior_preservation_cosine_total = 0.
     prior_preservation_logged_steps = 0
+    clip_margin_loss_total = 0.
+    clip_margin_loss_scaled_total = 0.
+    clip_margin_feature_std_total = 0.
+    clip_margin_effective_rank_total = 0.
+    clip_margin_offdiag_total = 0.
+    clip_margin_positive_total = 0.
+    clip_margin_hardest_total = 0.
+    clip_margin_margin_total = 0.
+    clip_margin_logged_steps = 0
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
@@ -1486,6 +1589,14 @@ for epoch in progress_bar:
     test_align_mean_dist_total = 0.
     test_align_cov_dist_total = 0.
     test_align_logged_steps = 0
+    test_clip_margin_loss_total = 0.
+    test_clip_margin_feature_std_total = 0.
+    test_clip_margin_effective_rank_total = 0.
+    test_clip_margin_offdiag_total = 0.
+    test_clip_margin_positive_total = 0.
+    test_clip_margin_hardest_total = 0.
+    test_clip_margin_margin_total = 0.
+    test_clip_margin_logged_steps = 0
     reldrop_stats_total = {}
     reldrop_stats_steps = 0
 
@@ -1640,9 +1751,29 @@ for epoch in progress_bar:
                 align_cov_dist_total += align_cov_dist.detach().float().item()
                 align_logged_steps += 1
 
-            if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology:
+            if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology or clip_margin_loss_weight >= 0:
                 clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                 clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
+
+            clip_margin_loss, clip_margin_batch_stats = clip_margin_stats(
+                clip_voxels_norm,
+                clip_target_norm,
+                margin_floor=clip_margin_floor,
+                topk=clip_margin_topk,
+                exclude_teacher_topk=clip_margin_exclude_teacher_topk,
+            )
+            clip_margin_loss_scaled = clip_margin_loss * clip_margin_loss_weight
+            if clip_margin_loss_weight > 0:
+                loss += clip_margin_loss_scaled
+            clip_margin_loss_total += clip_margin_loss.detach().float().item()
+            clip_margin_loss_scaled_total += clip_margin_loss_scaled.detach().float().item()
+            clip_margin_feature_std_total += clip_margin_batch_stats["feature_std_mean"].detach().float().item()
+            clip_margin_effective_rank_total += clip_margin_batch_stats["effective_rank"].detach().float().item()
+            clip_margin_offdiag_total += clip_margin_batch_stats["offdiag_pred_cosine"].detach().float().item()
+            clip_margin_positive_total += clip_margin_batch_stats["positive_similarity"].detach().float().item()
+            clip_margin_hardest_total += clip_margin_batch_stats["hardest_impostor_similarity"].detach().float().item()
+            clip_margin_margin_total += clip_margin_batch_stats["positive_minus_hardest_margin"].detach().float().item()
+            clip_margin_logged_steps += 1
 
             if relational_consistency:
                 if rel_target == "clip":
@@ -1850,9 +1981,25 @@ for epoch in progress_bar:
                 clip_voxels /= 3
                 backbone /= 3
 
-                if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology:
+                if clip_scale>0 or relational_consistency or use_clip_topology or use_clip_neighbor_topology or clip_margin_loss_weight >= 0:
                     clip_voxels_norm = nn.functional.normalize(clip_voxels.flatten(1), dim=-1)
                     clip_target_norm = nn.functional.normalize(clip_target.flatten(1), dim=-1)
+
+                test_clip_margin_loss, test_clip_margin_stats = clip_margin_stats(
+                    clip_voxels_norm,
+                    clip_target_norm,
+                    margin_floor=clip_margin_floor,
+                    topk=clip_margin_topk,
+                    exclude_teacher_topk=clip_margin_exclude_teacher_topk,
+                )
+                test_clip_margin_loss_total += test_clip_margin_loss.detach().float().item()
+                test_clip_margin_feature_std_total += test_clip_margin_stats["feature_std_mean"].detach().float().item()
+                test_clip_margin_effective_rank_total += test_clip_margin_stats["effective_rank"].detach().float().item()
+                test_clip_margin_offdiag_total += test_clip_margin_stats["offdiag_pred_cosine"].detach().float().item()
+                test_clip_margin_positive_total += test_clip_margin_stats["positive_similarity"].detach().float().item()
+                test_clip_margin_hardest_total += test_clip_margin_stats["hardest_impostor_similarity"].detach().float().item()
+                test_clip_margin_margin_total += test_clip_margin_stats["positive_minus_hardest_margin"].detach().float().item()
+                test_clip_margin_logged_steps += 1
 
                 if use_functional_alignment:
                     test_align_loss, test_align_mean_loss, test_align_cov_loss, test_align_mean_dist, test_align_cov_dist = functional_alignment_stats(
@@ -2024,6 +2171,20 @@ for epoch in progress_bar:
                 "train/prior_preservation_cosine_to_anchor": prior_preservation_cosine_total / max(1, prior_preservation_logged_steps),
                 "train/prior_preservation_training_only": 1.0,
                 "train/prior_preservation_shared1000_or_new_test_used": 0.0,
+                "train/clip_margin_weight": clip_margin_loss_weight,
+                "train/clip_margin_floor": clip_margin_floor,
+                "train/clip_margin_topk": clip_margin_topk,
+                "train/clip_margin_exclude_teacher_topk": clip_margin_exclude_teacher_topk,
+                "train/clip_margin_loss": clip_margin_loss_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_loss_scaled": clip_margin_loss_scaled_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_feature_std_mean": clip_margin_feature_std_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_effective_rank": clip_margin_effective_rank_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_offdiag_pred_cosine": clip_margin_offdiag_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_positive_similarity": clip_margin_positive_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_hardest_impostor_similarity": clip_margin_hardest_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_positive_minus_hardest": clip_margin_margin_total / max(1, clip_margin_logged_steps),
+                "train/clip_margin_training_batch_only": 1.0,
+                "train/clip_margin_shared1000_or_new_test_used": 0.0,
                 "test/clip_neighbor_loss": test_neighbor_loss_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_teacher_topk": test_neighbor_topk_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_overlap_at_1": test_neighbor_overlap1_total / max(1, test_neighbor_logged_steps),
@@ -2031,6 +2192,13 @@ for epoch in progress_bar:
                 "test/clip_neighbor_overlap_at_10": test_neighbor_overlap10_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_teacher_top1_median_rank": test_neighbor_median_rank_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_teacher_top1_mrr": test_neighbor_mrr_total / max(1, test_neighbor_logged_steps),
+                "test/clip_margin_loss": test_clip_margin_loss_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_feature_std_mean": test_clip_margin_feature_std_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_effective_rank": test_clip_margin_effective_rank_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_offdiag_pred_cosine": test_clip_margin_offdiag_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_positive_similarity": test_clip_margin_positive_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_hardest_impostor_similarity": test_clip_margin_hardest_total / max(1, test_clip_margin_logged_steps),
+                "test/clip_margin_positive_minus_hardest": test_clip_margin_margin_total / max(1, test_clip_margin_logged_steps),
                 "train/functional_alignment_loss": align_loss_total / max(1, align_logged_steps),
                 "train/functional_alignment_loss_scaled": align_loss_scaled_total / max(1, align_logged_steps),
                 "train/functional_alignment_mean_loss": align_mean_loss_total / max(1, align_logged_steps),
@@ -2057,6 +2225,31 @@ for epoch in progress_bar:
                     f"current_norm={logs['train/prior_preservation_current_norm']:.8g} "
                     f"cosine_to_anchor={logs['train/prior_preservation_cosine_to_anchor']:.8g} "
                     "training_only=True "
+                    "shared1000_or_new_test_used=False "
+                    "test_sources_used=[]"
+                )
+
+            if clip_margin_log_every > 0 and (epoch % clip_margin_log_every == 0 or epoch == num_epochs - 1):
+                print(
+                    "clip_margin_epoch "
+                    f"epoch={epoch} "
+                    f"weight={clip_margin_loss_weight:.8g} "
+                    f"floor={clip_margin_floor:.8g} "
+                    f"topk={clip_margin_topk} "
+                    f"exclude_teacher_topk={clip_margin_exclude_teacher_topk} "
+                    f"loss={logs['train/clip_margin_loss']:.8g} "
+                    f"loss_scaled={logs['train/clip_margin_loss_scaled']:.8g} "
+                    f"feature_std_mean={logs['train/clip_margin_feature_std_mean']:.8g} "
+                    f"effective_rank={logs['train/clip_margin_effective_rank']:.8g} "
+                    f"offdiag_pred_cosine={logs['train/clip_margin_offdiag_pred_cosine']:.8g} "
+                    f"positive_similarity={logs['train/clip_margin_positive_similarity']:.8g} "
+                    f"hardest_impostor_similarity={logs['train/clip_margin_hardest_impostor_similarity']:.8g} "
+                    f"positive_minus_hardest={logs['train/clip_margin_positive_minus_hardest']:.8g} "
+                    f"test_feature_std_mean={logs['test/clip_margin_feature_std_mean']:.8g} "
+                    f"test_effective_rank={logs['test/clip_margin_effective_rank']:.8g} "
+                    f"test_offdiag_pred_cosine={logs['test/clip_margin_offdiag_pred_cosine']:.8g} "
+                    f"test_positive_minus_hardest={logs['test/clip_margin_positive_minus_hardest']:.8g} "
+                    "training_batch_only=True "
                     "shared1000_or_new_test_used=False "
                     "test_sources_used=[]"
                 )

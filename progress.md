@@ -3232,3 +3232,76 @@ Conclusion:
 - Cycle 43 succeeds. Rank/margin observability is now available as a normal compact diagnostic artifact set for the completed Cycle 40 rows, with subject 5 and subject 7 kept separate.
 - The replayed sampled top-1 deltas match Cycle 42 within tolerance, and the new outputs expose the core failure mode directly: large positive rank worsening, strongly negative hardest-impostor margin deltas, and hundreds of rank-1 to rank-greater-than-1 transitions under `prior_low`.
 - Future training proposals should treat these diagnostics as acceptance proxies before considering any renewed anti-collapse objective or other model branch.
+
+## 2026-06-05 Cycle 44
+
+Plan source: executed `/plan.md` only. Telegram report is due.
+
+Scope:
+- Implemented and launched the retrieval-calibrated anti-collapse test for subjects 5 and 7 only.
+- Rows are the same-code zero-control `margin0` and one conservative nonzero row `margin_low` with `clip_margin_loss_weight=0.05`, `clip_margin_floor=0.02`, `clip_margin_topk=8`, and `clip_margin_exclude_teacher_topk=0`.
+- No prior-weight grid, no subject 1/2 scale-up, no use of `/strategizing-chat.md`, and no held-out/test labels or evaluator outputs used in training loss.
+
+Preflight:
+- `/job-status.md` was not visible in this workspace; `squeue -u "$USER"` showed no active jobs before Cycle 44 submission.
+- Official multisubject checkpoints were present for both planned subjects:
+  - `/src/train_logs/final_multisubject_subj05/last.pth`, about `9.7G`.
+  - `/src/train_logs/final_multisubject_subj07/last.pth`, about `9.7G`.
+- Existing official/evaluator reference artifacts were present, including Cycle 42 and Cycle 43 summary JSON files under `/src/tables/`.
+
+Code/config changes:
+- Edited `/src/Train.py` to add CLI-gated batch-local predicted-CLIP margin support:
+  - `--clip_margin_loss_weight`, default `0.0`.
+  - `--clip_margin_floor`, default `0.02`.
+  - `--clip_margin_topk`, default `8`.
+  - `--clip_margin_exclude_teacher_topk`, default `0`.
+  - `--clip_margin_log_every`, default `1`.
+- The loss uses normalized predicted CLIP tokens flattened at the same `clip_voxels` boundary as prior/topology experiments and same-batch frozen image OpenCLIP targets. It computes positive similarity, hardest eligible in-batch impostor similarity, and hinge `relu(floor - positive + hardest)`.
+- Added compact train/test diagnostics: feature std mean, effective rank, off-diagonal predicted-feature cosine, positive similarity, hardest-impostor similarity, positive-minus-hardest margin, raw margin loss, and weighted contribution. Diagnostics are logged for `margin0` as well as `margin_low`.
+- Added Slurm scripts:
+  - `/src/cycle44_margin_smoke.slurm`
+  - `/src/cycle44_margin_train_s57.slurm`
+  - `/src/cycle44_margin_eval_s57.slurm`
+- Added `/src/cycle44_rank_margin_diagnostics.py`, a Cycle 44 wrapper around the Cycle 43 evaluator replay path for `margin_low - margin0`, plus feature-spread summaries from saved `all_clipvoxels`.
+
+Validation:
+- Compile passed:
+  - `/src/fmri/bin/python -m py_compile /src/Train.py /src/models.py`
+  - `/src/fmri/bin/python -m py_compile /src/cycle44_rank_margin_diagnostics.py`
+- Slurm syntax passed:
+  - `bash -n /src/cycle44_margin_smoke.slurm /src/cycle44_margin_train_s57.slurm /src/cycle44_margin_eval_s57.slurm`
+
+Smoke jobs:
+- First smoke submission `9263797` used `num_epochs=1` and failed before training in both rows with `ValueError: Expected float between 0 and 1 pct_start, but got 2.0`. This is the repo's existing OneCycleLR constraint from `pct_start=2/num_epochs`, not a margin-objective tensor error.
+- Corrected smoke script to `num_epochs=3` and relaunched as job `9263912`.
+- Corrected smoke completed successfully:
+  - `9263912_0` `margin0`: `COMPLETED`, exit `0:0`, elapsed `00:05:07`, MaxRSS `21451544K`.
+  - `9263912_1` `margin_low`: `COMPLETED`, exit `0:0`, elapsed `00:05:07`, MaxRSS `21450872K`.
+- Smoke checkpoints were saved under `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_smoke_subj07_margin0_1sess_3ep/last.pth` and `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle44_smoke_subj07_margin_low_1sess_3ep/last.pth`.
+
+Smoke diagnostics:
+- `margin0` epoch diagnostics:
+  - epoch 0: loss `0.036465553`, scaled `0`, feature std mean `0.00018122624`, effective rank `18.324457`, offdiag cosine `0.95465285`, train margin `-0.016411889`, test margin `-0.019134521`.
+  - epoch 2: loss `0.0023177535`, scaled `0`, feature std mean `0.00090216493`, effective rank `20.661776`, offdiag cosine `0.26441217`, train margin `0.040502733`, test margin `-0.0088272095`.
+- `margin_low` epoch diagnostics:
+  - epoch 0: loss `0.036467029`, scaled `0.0018233638`, feature std mean `0.00018122172`, effective rank `18.324303`, offdiag cosine `0.9546686`, train margin `-0.016413073`, test margin `-0.019134521`.
+  - epoch 2: loss `0.0023151136`, scaled `0.00011575607`, feature std mean `0.00090235017`, effective rank `20.662571`, offdiag cosine `0.26421528`, train margin `0.040517499`, test margin `-0.0088348389`.
+- Smoke conclusion: code path is finite, shape-compatible, same-code control logs diagnostics, and the nonzero row contributes the intended small weighted margin term.
+
+Training launched:
+- Submitted full four-row training array with `sbatch /src/cycle44_margin_train_s57.slurm`.
+- Job ID: `9264132`.
+- Planned rows:
+  - `9264132_0`: subject 5 `cycle44_subj05_margin0_1sess_150ep`.
+  - `9264132_1`: subject 5 `cycle44_subj05_margin_low_1sess_150ep`.
+  - `9264132_2`: subject 7 `cycle44_subj07_margin0_1sess_150ep`.
+  - `9264132_3`: subject 7 `cycle44_subj07_margin_low_1sess_150ep`.
+- At last check, all four rows were still `PENDING` on the `gpu` partition with time limit `04:30:00`; no full-training logs or checkpoints were available yet.
+
+Pending next actions:
+- Wait for job `9264132` to complete or fail.
+- If rows complete, launch `/src/cycle44_margin_eval_s57.slurm` for completed rows only, then run `/src/cycle44_rank_margin_diagnostics.py`.
+- If any row fails, inspect `/src/slurms/c44_margin_s57_9264132_<task>.out/.err`, fix only operational issues that preserve the exact objective/protocol, and relaunch only failed planned rows.
+
+Telegram-ready update:
+- Cycle 44 implemented the planned batch-local CLIP margin anti-collapse objective and diagnostics in `Train.py`, with no-effect defaults and training-batch-only positives/impostors. Compile and Slurm syntax checks passed. A first 1-epoch smoke exposed an existing scheduler bug (`pct_start=2/num_epochs`), so the smoke was corrected to 3 epochs. Corrected smoke job `9263912` completed both `margin0` and `margin_low` rows in `00:05:07`, MaxRSS about `21.5G`, with finite margin diagnostics and saved smoke checkpoints. Full subject 5/7 four-row training array `9264132` has been submitted and is pending on the GPU partition; no final metrics or plots are available yet. Next report should parse `9264132` logs, run evaluation for completed checkpoints, and compare `margin_low - margin0` with the Cycle 44 rank/margin diagnostic.
