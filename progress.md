@@ -2929,3 +2929,53 @@ Current status and next steps:
 - The prior-preservation implementation and smoke gate are complete.
 - Full protected subject 5/7 training and dependent enhanced evaluation are not yet completed. Immediately after the entry above was drafted, `9239769_0` and `9239769_1` started on `della-l04g8` and `della-l04g7` respectively; `9239769_2` and `9239769_3` remained pending for priority, and `9239770_[0-3]` remained pending on dependency.
 - Next cycle should inspect `9239769` and `9239770`, parse logs/artifacts, and only then compute the required final metric table and same-subject deltas.
+## 2026-06-05 Cycle 40
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Code/config changes:
+- None. This was a readout-only cycle for completed Cycle 40 prior-preservation artifacts.
+
+Scheduler authentication:
+- `/job-status.md` was not present in this workspace, so scheduler state was authenticated with `sacct -j 9239769,9239770 --format=JobIDRaw,JobID,JobName%45,State,ExitCode,Elapsed,NodeList,ReqMem,MaxRSS,StdOut,StdErr -P`.
+- Training array `9239769_[0-3]` completed `0:0`: subj05 prior0 `02:25:50` on `della-l04g8`, MaxRSS `21611964K`; subj05 prior_low `02:25:50` on `della-l04g7`, MaxRSS `21614140K`; subj07 prior0 `02:21:53` on `della-l03g12`, MaxRSS `23077004K`; subj07 prior_low `02:25:57` on `della-l02g9`, MaxRSS `22072704K`.
+- Enhanced evaluator array `9239770_[0-3]` completed `0:0`: subj05 prior0 `02:29:06` on `della-l02g9`, MaxRSS `49320896K`; subj05 prior_low `02:35:38` on `della-l02g8`, MaxRSS `49150416K`; subj07 prior0 `02:27:23` on `della-l03g4`, MaxRSS `49414328K`; subj07 prior_low `02:26:21` on `della-l05g2`, MaxRSS `49509036K`.
+- Logs parsed from `/src/slurms/c40_prior_s57_9239769_{0..3}.{out,err}` and `/src/slurms/c40_prior_eval_s57_9239770_{0..3}.{out,err}`.
+
+Training provenance and diagnostics:
+- All four rows loaded official multisubject anchors from `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj05/last.pth` or `subj07/last.pth` and saved checkpoints under `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/<model_name>/last`.
+- Prior-preservation logging confirmed `training_only=True`, `shared1000_or_new_test_used=False`, and `test_sources_used=[]` for all four rows.
+- Final training-stream diagnostics: subj05 prior0 test loss `14.3`, test blurry PixCorr `0.193`, test fwd/bwd `0.670/0.583`, train blurry PixCorr `0.801`, train bwd `1.000`; subj05 prior_low test loss `16.7`, test blurry PixCorr `0.198`, test fwd/bwd `0.640/0.0533`, train blurry PixCorr `0.800`, train bwd `1.000`; subj07 prior0 test loss `14.2`, test blurry PixCorr `0.226`, test fwd/bwd `0.730/0.563`, train blurry PixCorr `0.788`, train bwd `1.000`; subj07 prior_low test loss `16.6`, test blurry PixCorr `0.238`, test fwd/bwd `0.687/0.0533`, train blurry PixCorr `0.787`, train bwd `1.000`.
+- Final prior-preservation diagnostics: subj05 prior0 epoch 149 raw loss `0.91309720`, scaled loss `0`, anchor/current norm `225.22904/488.00924`, cosine `0.086902799`; subj05 prior_low raw `0.27013382`, scaled `0.013506691`, anchor/current norm `225.22904/319.17898`, cosine `0.72986618`; subj07 prior0 raw `0.89919639`, scaled `0`, anchor/current norm `232.92859/493.71268`, cosine `0.10080361`; subj07 prior_low raw `0.26912806`, scaled `0.013456403`, anchor/current norm `232.92859/321.40566`, cosine `0.73087194`.
+- The `prior0` scaled preservation loss was exactly zero in both subjects. The `prior_low` scaled loss was finite and low magnitude, about `0.0135`.
+
+Artifact authentication:
+- Enhanced evaluator logs confirm `final_evaluations.py` consumed `all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt` for all four rows.
+- Loaded tensors with `/src/fmri/bin/python`; all are `torch.float32`, shape `(1000, 3, 256, 256)`, finite, min `0.0`, max `1.0`.
+- Tensor means: subj05 prior0 `0.515476`, subj05 prior_low `0.515872`, subj07 prior0 `0.507720`, subj07 prior_low `0.520754`.
+- CSVs parsed from `/src/tables/cycle40_*_all_enhancedrecons.csv`.
+
+Final protected enhanced-evaluator metrics:
+
+| row | PixCorr | SSIM | Alex2 | Alex5 | Inception | CLIP | EffNet-B ↓ | SwAV ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| cycle40_subj05_prior0_1sess_150ep | 0.192674 | 0.406933 | 0.846794 | 0.916086 | 0.856197 | 0.840533 | 0.768113 | 0.431212 | 0.648778 | 0.552778 | 0.416381 | 0.351920 | 0.355988 | 0.341006 | 0.315086 | 0.423627 |
+| cycle40_subj05_prior_low_1sess_150ep | 0.195915 | 0.407137 | 0.848376 | 0.915593 | 0.853101 | 0.839756 | 0.770556 | 0.435869 | 0.636778 | 0.072222 | 0.418819 | 0.350598 | 0.359745 | 0.342304 | 0.318672 | 0.427009 |
+| cycle40_subj07_prior0_1sess_150ep | 0.194279 | 0.404695 | 0.829048 | 0.894047 | 0.785077 | 0.770978 | 0.828250 | 0.477893 | 0.680556 | 0.542000 | 0.321338 | 0.321689 | 0.324969 | 0.316007 | 0.281305 | 0.306982 |
+| cycle40_subj07_prior_low_1sess_150ep | 0.197544 | 0.399234 | 0.832215 | 0.896614 | 0.781957 | 0.779430 | 0.829530 | 0.477388 | 0.641444 | 0.055889 | 0.323756 | 0.327256 | 0.327405 | 0.317699 | 0.281755 | 0.306575 |
+
+Same-subject protected deltas, `prior_low - prior0`:
+
+| subject | PixCorr | SSIM | Alex2 | Alex5 | Inception | CLIP | EffNet-B ↓ | SwAV ↓ | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +0.003241 | +0.000204 | +0.001583 | -0.000493 | -0.003096 | -0.000777 | +0.002443 | +0.004657 | -0.012000 | -0.480556 | +0.002438 | -0.001322 | +0.003758 | +0.001298 | +0.003586 | +0.003382 |
+| subj07 | +0.003265 | -0.005461 | +0.003167 | +0.002567 | -0.003120 | +0.008452 | +0.001280 | -0.000504 | -0.039111 | -0.486111 | +0.002417 | +0.005567 | +0.002435 | +0.001692 | +0.000450 | -0.000407 |
+
+Decision:
+- Fail for both subjects. The success criterion required about `+0.02` absolute BrainRet improvement with ImageRet preserved or improved. Instead, BrainRet collapsed from `0.552778` to `0.072222` for subject 5 and from `0.542000` to `0.055889` for subject 7. ImageRet also worsened by `-0.0120` and `-0.0391`.
+- The low-weight anchor penalty successfully increased cosine-to-anchor and reduced current norm drift, but it damaged protected brain-to-image retrieval. Image-side metrics, PixCorr, and ROI correlations are diagnostics only and do not override the BrainRet failure.
+
+Conclusions:
+- Close this specific predicted-CLIP anchor-preservation setting.
+- Per `/plan.md`, do not widen into a prior-weight grid, topology revival, adapters, routers, MoE, CLIP-layer fusion, generator/refiner edits, caption/VLM correction, temporal decoding, hard voxel pruning, or reliability-prior revival as an immediate continuation from this result.
+- Next valid research question should return to interpreting why preserving anchor cosine destroys backward retrieval while leaving image-side evaluator metrics nearly unchanged, using existing artifacts only unless a new plan explicitly authorizes new experiments.
