@@ -3085,3 +3085,71 @@ Decision and next-step recommendation:
 - Do not continue this prior-preservation branch, do not run a prior-weight grid, and do not scale to subjects 1/2.
 - Any future mechanism must preserve instance-level separability, feature variance/effective rank, and positive-impostor margins, not just cosine-to-anchor or average norm drift.
 - A justified next diagnostic, if requested by a future plan, would compare final BrainRet’s brain-encoder retrieval geometry against the direct saved predicted-CLIP geometry to locate the downstream amplification between compressed predicted CLIP and enhanced reconstruction evaluation.
+
+## 2026-06-05 Cycle 42
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Artifact-only downstream BrainRet amplification diagnostic for completed Cycle 40 prior-preservation rows.
+- No training, no new model branch, no evaluator rerun for a new row, no subject 1/2 scale-up, and no `sbatch` job was launched.
+
+Scheduler and artifact authentication:
+- `/job-status.md` was absent; `squeue -u "$USER"` showed no active jobs.
+- All four Cycle 40 eval directories, `all_clipvoxels`, `all_blurryrecons`, `all_recons`, `all_enhancedrecons`, and final CSVs were present.
+- Cycle 40 evaluator logs confirmed `all_recons_path=evals/<model>/<model>_all_enhancedrecons.pt` for all four rows.
+- Important evaluator-path finding: `/src/final_evaluations.py` computes protected `BrainRet` as `BwdRetrieval` from saved `all_clipvoxels` against true image OpenCLIP embeddings in repeated 300-image top-1 samples. The enhanced reconstruction tensor is authenticated for the same final evaluation run but does not feed the protected BrainRet calculation.
+
+Code/config changes:
+- Added `/src/cycle42_brainret_amplification_diagnostic.py`.
+- The script reads Cycle 40 artifacts and Cycle 41 diagnostic outputs, reuses the existing `/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt` teacher cache, replays the final evaluator's 30 random 300-image BrainRet subsets, and writes compact CSV/JSON only.
+- Initial combined interactive runs were externally killed before the final JSON write while holding large tensors for both subjects. I reduced memory by reusing Cycle 41 calibration values instead of recomputing effective-rank eigenspectra, avoiding reconstruction tensor loads in preflight, and running subjects 5 and 7 separately before merging compact outputs.
+
+Commands and validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle42_brainret_amplification_diagnostic.py`
+- `/src/fmri/bin/python /src/cycle42_brainret_amplification_diagnostic.py --data_path=/src --outdir=/src/tables/cycle42_brainret_amplification_diagnostic_s5 --subjects 5 --topn=20`
+- `/src/fmri/bin/python /src/cycle42_brainret_amplification_diagnostic.py --data_path=/src --outdir=/src/tables/cycle42_brainret_amplification_diagnostic_s7 --subjects 7 --topn=20`
+- Merged compact outputs into `/src/tables/cycle42_brainret_amplification_diagnostic/`; removed temporary `_s5` and `_s7` directories.
+- JSON validation passed. Per-image CSV row counts: subject 5 `1000` rows, subject 7 `1000` rows, each with `82` columns. Output directory size is about `1.9M`.
+
+Outputs:
+- `/src/tables/cycle42_brainret_amplification_diagnostic/cycle42_brainret_amplification_summary.json`
+- `/src/tables/cycle42_brainret_amplification_diagnostic/subj05_brainret_amplification_per_image.csv`
+- `/src/tables/cycle42_brainret_amplification_diagnostic/subj07_brainret_amplification_per_image.csv`
+
+Cycle 41 anchor consistency:
+- Subject 5 matched Cycle 41: image-rank delta mean `+142.922`, brain-rank delta mean `-1.580`, effective rank `47.662 -> 41.410`, self off-diagonal cosine `0.4800 -> 0.8976`.
+- Subject 7 matched Cycle 41: image-rank delta mean `+148.302`, brain-rank delta mean `+2.166`, effective rank `46.638 -> 41.094`, self off-diagonal cosine `0.5138 -> 0.9128`.
+
+Evaluator replay and final BrainRet amplification:
+
+| subject | CSV BrainRet delta | replayed sampled top-1 delta | replay minus CSV | full-pool rank delta mean | sampled-300 rank delta mean | sampled success-rate delta mean | sampled success-rate delta median |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | -0.480556 | -0.481333 | -0.000778 | +142.922 | +43.791 | -0.484099 | -0.428571 |
+| subj07 | -0.486111 | -0.485778 | +0.000333 | +148.302 | +45.486 | -0.487711 | -0.444444 |
+
+Margin and correlation readout:
+
+| subject | full-pool hardest-margin delta mean | sampled hardest-margin delta mean | corr(success delta, image-rank delta) | corr(success delta, brain-rank delta) | corr(success delta, sampled margin delta) | corr(success delta, enhanced evalmix PixCorr delta) |
+|---|---:|---:|---:|---:|---:|---:|
+| subj05 | -0.021515 | -0.021841 | +0.223 | -0.119 | +0.428 | -0.015 |
+| subj07 | -0.024302 | -0.022733 | +0.238 | +0.072 | +0.478 | +0.066 |
+
+Worst-regression pattern:
+- Many worst examples are clean top-1 losses: prior0 sampled success rate `1.0`, prior_low sampled success rate `0.0`, while direct Cycle 41 brain-rank deltas are often `0` or near `0`.
+- Example subject 5 rows include eval indices `521`, `520`, `519`, `518`, and `507`, where full-pool ranks move from `1` to `223`, `154`, `36`, `27`, and `291` respectively, but Cycle 41 brain-rank deltas are `0`, `1`, `0`, `0`, and `0`.
+- Example subject 7 rows include eval indices `856`, `429`, `428`, `857`, and `414`, where full-pool ranks move from `1` to `226`, `401`, `241`, `324`, and `75` respectively, but Cycle 41 brain-rank deltas are `0`.
+
+ROI/category feasibility:
+- Per-image ROI localization is not available from saved Cycle 40 artifacts. `final_evaluations.py` computes GNet ROI correlations and writes aggregate CSV values only; no per-image ROI tensor is saved.
+- Aggregate ROI values remain too blunt for localizing this failure because VC/HigherVis changed little while BrainRet collapsed.
+
+Conclusion:
+- Classify both subjects as evaluator top-1 amplification of upstream predicted-CLIP separability collapse.
+- The apparent mismatch from Cycle 41 is explained by metric geometry: the protected BrainRet gate is a repeated 300-way top-1 metric. A modest-looking direct rank summary can hide many images moving from rank 1 to rank 2+ or deeper, which produces an approximately `-0.48` absolute top-1 collapse.
+- This is not primarily a diffusion/refiner or enhanced-reconstruction failure, because protected BrainRet is computed before reconstruction metrics from `all_clipvoxels`. PixCorr stage deltas have near-zero relationship with final BrainRet success-rate deltas.
+
+Recommended next research questions:
+- Future diagnostics should report top-1 preservation, hardest-impostor margins, and rank-1-to-rank>1 transition counts directly, not only mean rank.
+- Any future training mechanism must protect predicted-CLIP variance/effective rank, off-diagonal similarity, hardest-impostor margins, and sampled top-1 BrainRet, not just anchor cosine or average norm.
+- Do not continue the prior-preservation branch or run a prior-weight grid from this result.
