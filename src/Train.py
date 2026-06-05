@@ -343,6 +343,26 @@ parser.add_argument(
     "--clip_neighbor_pool", type=str, default="flat", choices=["flat", "mean"],
     help="CLIP representation for sparse-neighbor loss. Default flat matches Cycle 36 topology training.",
 )
+parser.add_argument(
+    "--use_prior_preservation", action=argparse.BooleanOptionalAction, default=False,
+    help="Enable training-only drift regularization toward the frozen official multisubject initialization.",
+)
+parser.add_argument(
+    "--prior_preservation_weight", type=float, default=0.0,
+    help="Weight for prior-preservation drift loss. Default 0 preserves baseline behavior.",
+)
+parser.add_argument(
+    "--prior_preservation_target", type=str, default="clipvoxels", choices=["clipvoxels"],
+    help="Representation boundary to preserve. Cycle 39 supports predicted CLIP tokens.",
+)
+parser.add_argument(
+    "--prior_preservation_pool", type=str, default="flat", choices=["flat", "mean"],
+    help="Pooling for prior-preservation predicted CLIP representation.",
+)
+parser.add_argument(
+    "--prior_preservation_detach_anchor", action=argparse.BooleanOptionalAction, default=True,
+    help="Detach frozen-anchor predictions before computing preservation loss.",
+)
 
 if utils.is_interactive():
     args = parser.parse_args(jupyter_args)
@@ -1029,6 +1049,28 @@ def clip_neighbor_features(clip_tokens, pool="flat"):
         return clip_tokens.mean(dim=1)
     raise ValueError(f"Unknown clip_neighbor_pool: {pool}")
 
+def prior_preservation_features(clip_tokens, pool="flat"):
+    if pool == "flat":
+        return clip_tokens.flatten(1)
+    if pool == "mean":
+        if clip_tokens.ndim != 3:
+            raise ValueError(f"Expected CLIP tokens [batch, tokens, dim] for mean pooling, got {tuple(clip_tokens.shape)}")
+        return clip_tokens.mean(dim=1)
+    raise ValueError(f"Unknown prior_preservation_pool: {pool}")
+
+def prior_preservation_stats(current_clip, anchor_clip, pool="flat", detach_anchor=True):
+    current_features = prior_preservation_features(current_clip, pool=pool)
+    anchor_features = prior_preservation_features(anchor_clip, pool=pool)
+    if detach_anchor:
+        anchor_features = anchor_features.detach()
+    current_norm = nn.functional.normalize(current_features, dim=-1)
+    anchor_norm = nn.functional.normalize(anchor_features, dim=-1)
+    cosine_sim = nn.functional.cosine_similarity(current_norm, anchor_norm, dim=-1).mean()
+    loss_prior_preservation = (1.0 - cosine_sim).float()
+    anchor_rep_norm = torch.linalg.vector_norm(anchor_features.float(), dim=-1).mean()
+    current_rep_norm = torch.linalg.vector_norm(current_features.float(), dim=-1).mean()
+    return loss_prior_preservation, anchor_rep_norm, current_rep_norm, cosine_sim
+
 def clip_neighbor_topology_stats(
     pred_norm,
     target_norm,
@@ -1190,6 +1232,14 @@ if local_rank==0 and wandb_log: # only use main process for wandb logging
       "clip_neighbor_training_only": True,
       "clip_neighbor_shared1000_or_new_test_used": False,
       "clip_neighbor_test_sources_used": [],
+      "use_prior_preservation": use_prior_preservation,
+      "prior_preservation_weight": prior_preservation_weight,
+      "prior_preservation_target": prior_preservation_target,
+      "prior_preservation_pool": prior_preservation_pool,
+      "prior_preservation_detach_anchor": prior_preservation_detach_anchor,
+      "prior_preservation_training_only": True,
+      "prior_preservation_shared1000_or_new_test_used": False,
+      "prior_preservation_test_sources_used": [],
       "mixup_pct": mixup_pct,
       "num_samples_per_epoch": num_samples_per_epoch,
       "num_test": num_test,
@@ -1236,6 +1286,33 @@ if resume_from_ckpt and os.path.exists(os.path.join(outdir, "last.pth")):
     resumed_from_local_ckpt = True
 if multisubject_ckpt is not None and not resumed_from_local_ckpt:
     load_ckpt("last",outdir=multisubject_ckpt,load_lr=False,load_optimizer=False,load_epoch=False,strict=False,multisubj_loading=True)
+
+prior_preservation_ridge = None
+prior_preservation_backbone = None
+prior_preservation_anchor_source = None
+if use_prior_preservation:
+    if prior_preservation_target != "clipvoxels":
+        raise ValueError(f"Unsupported prior_preservation_target={prior_preservation_target!r}")
+    if multisubject_ckpt is None:
+        raise ValueError("--use_prior_preservation requires --multisubject_ckpt for official-anchor provenance")
+    if resumed_from_local_ckpt:
+        raise ValueError(
+            "--use_prior_preservation does not support --resume_from_ckpt in this cycle; "
+            "rerun the exact failed row from the official multisubject initialization."
+        )
+    prior_preservation_ridge = copy.deepcopy(model.ridge).eval()
+    prior_preservation_backbone = copy.deepcopy(model.backbone).eval()
+    prior_preservation_backbone.blurry_recon = False
+    prior_preservation_ridge.requires_grad_(False)
+    prior_preservation_backbone.requires_grad_(False)
+    prior_preservation_anchor_source = os.path.join(os.path.abspath(multisubject_ckpt), "last.pth")
+    print(
+        "Prior preservation enabled: "
+        f"target={prior_preservation_target}, pool={prior_preservation_pool}, "
+        f"weight={prior_preservation_weight}, detach_anchor={prior_preservation_detach_anchor}, "
+        f"anchor_source={prior_preservation_anchor_source}, training_only=True, "
+        "shared1000_or_new_test_used=False, test_sources_used=[]"
+    )
 
 adapter_prior_state = None
 adapter_prior_ridge = None
@@ -1298,6 +1375,10 @@ if proj_reg_state is not None:
 if functional_alignment_reference is not None:
     functional_alignment_reference["mean"] = functional_alignment_reference["mean"].to(device)
     functional_alignment_reference["cov"] = functional_alignment_reference["cov"].to(device)
+if prior_preservation_ridge is not None:
+    prior_preservation_ridge = prior_preservation_ridge.to(device)
+if prior_preservation_backbone is not None:
+    prior_preservation_backbone = prior_preservation_backbone.to(device)
 
 if use_clip_neighbor_topology:
     print(
@@ -1367,6 +1448,12 @@ for epoch in progress_bar:
     neighbor_median_rank_total = 0.
     neighbor_mrr_total = 0.
     neighbor_logged_steps = 0
+    prior_preservation_loss_total = 0.
+    prior_preservation_loss_scaled_total = 0.
+    prior_preservation_anchor_norm_total = 0.
+    prior_preservation_current_norm_total = 0.
+    prior_preservation_cosine_total = 0.
+    prior_preservation_logged_steps = 0
     test_rel_loss_total = 0.
     test_rel_sim_corr_total = 0.
     test_rel_logged_steps = 0
@@ -1512,6 +1599,30 @@ for epoch in progress_bar:
                 proj_reg_logged_steps += 1
 
             backbone, clip_voxels, blurry_image_enc_ = model_for_submodules.backbone(voxel_ridge)
+
+            if use_prior_preservation:
+                with torch.no_grad():
+                    anchor_voxel_ridge_list = [
+                        prior_preservation_ridge(voxel_list[si], si)
+                        for si, s in enumerate(subj_list)
+                    ]
+                    anchor_voxel_ridge = torch.cat(anchor_voxel_ridge_list, dim=0)
+                    _, anchor_clip_voxels, _ = prior_preservation_backbone(anchor_voxel_ridge)
+                prior_preservation_loss, prior_anchor_norm, prior_current_norm, prior_cosine = prior_preservation_stats(
+                    clip_voxels,
+                    anchor_clip_voxels,
+                    pool=prior_preservation_pool,
+                    detach_anchor=prior_preservation_detach_anchor,
+                )
+                prior_preservation_loss_scaled = prior_preservation_loss * prior_preservation_weight
+                if prior_preservation_weight > 0:
+                    loss += prior_preservation_loss_scaled
+                prior_preservation_loss_total += prior_preservation_loss.detach().float().item()
+                prior_preservation_loss_scaled_total += prior_preservation_loss_scaled.detach().float().item()
+                prior_preservation_anchor_norm_total += prior_anchor_norm.detach().float().item()
+                prior_preservation_current_norm_total += prior_current_norm.detach().float().item()
+                prior_preservation_cosine_total += prior_cosine.detach().float().item()
+                prior_preservation_logged_steps += 1
 
             if use_functional_alignment:
                 align_loss, align_mean_loss, align_cov_loss, align_mean_dist, align_cov_dist = functional_alignment_stats(
@@ -1905,6 +2016,14 @@ for epoch in progress_bar:
                 "train/clip_neighbor_teacher_top1_mrr": neighbor_mrr_total / max(1, neighbor_logged_steps),
                 "train/clip_neighbor_training_only": 1.0,
                 "train/clip_neighbor_shared1000_or_new_test_used": 0.0,
+                "train/prior_preservation_weight": prior_preservation_weight,
+                "train/prior_preservation_loss": prior_preservation_loss_total / max(1, prior_preservation_logged_steps),
+                "train/prior_preservation_loss_scaled": prior_preservation_loss_scaled_total / max(1, prior_preservation_logged_steps),
+                "train/prior_preservation_anchor_norm": prior_preservation_anchor_norm_total / max(1, prior_preservation_logged_steps),
+                "train/prior_preservation_current_norm": prior_preservation_current_norm_total / max(1, prior_preservation_logged_steps),
+                "train/prior_preservation_cosine_to_anchor": prior_preservation_cosine_total / max(1, prior_preservation_logged_steps),
+                "train/prior_preservation_training_only": 1.0,
+                "train/prior_preservation_shared1000_or_new_test_used": 0.0,
                 "test/clip_neighbor_loss": test_neighbor_loss_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_teacher_topk": test_neighbor_topk_total / max(1, test_neighbor_logged_steps),
                 "test/clip_neighbor_overlap_at_1": test_neighbor_overlap1_total / max(1, test_neighbor_logged_steps),
@@ -1926,6 +2045,21 @@ for epoch in progress_bar:
                 }
             for k, v in reldrop_stats_total.items():
                 logs[f"train/reldrop_{k}"] = v / max(1, reldrop_stats_steps)
+
+            if use_prior_preservation:
+                print(
+                    "prior_preservation_epoch "
+                    f"epoch={epoch} "
+                    f"weight={prior_preservation_weight:.8g} "
+                    f"loss={logs['train/prior_preservation_loss']:.8g} "
+                    f"loss_scaled={logs['train/prior_preservation_loss_scaled']:.8g} "
+                    f"anchor_norm={logs['train/prior_preservation_anchor_norm']:.8g} "
+                    f"current_norm={logs['train/prior_preservation_current_norm']:.8g} "
+                    f"cosine_to_anchor={logs['train/prior_preservation_cosine_to_anchor']:.8g} "
+                    "training_only=True "
+                    "shared1000_or_new_test_used=False "
+                    "test_sources_used=[]"
+                )
 
             # if finished training, save jpg recons if they exist
             if (epoch == num_epochs-1) or (epoch % ckpt_interval == 0):

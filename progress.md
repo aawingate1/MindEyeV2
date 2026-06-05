@@ -2872,3 +2872,60 @@ Conclusion and next research questions:
 - Do not revive sparse-neighbor topology, topology grids, or stronger topology loss from this result.
 - Future work should prioritize conservative prior-preserving or subject-alignment regularization anchored to the official multisubject initialization, not additional semantic/topology supervision.
 - If a future cycle needs per-image stage OpenCLIP ranks, first resolve the Slurm path split by making the compute-visible `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` artifacts visible from the interactive shell or writing a compute job that copies outputs back to `/src`.
+
+## Cycle 39 execution / Cycle 40 prior-preservation launch - 2026-06-05
+
+Plan source:
+- Read and executed `/plan.md` only. Telegram report is not due.
+- Scope was the prior-preserving weak-subject adaptation plan for subjects 5 and 7 only. No subject 1/2 jobs, topology/neighborhood losses, adapters, routers, refiner edits, evaluator changes, or weight grid were launched.
+
+Code/config changes:
+- Updated `/src/Train.py` with disabled-by-default flags: `--use_prior_preservation`, `--prior_preservation_weight`, `--prior_preservation_target=clipvoxels`, `--prior_preservation_pool=flat|mean`, and `--prior_preservation_detach_anchor`.
+- Implemented a training-only frozen anchor from the same official multisubject initialization loaded by the row. The anchor is a frozen copy of the initialized ridge and backbone, with the copied backbone blurry branch disabled for the anchor forward. It runs under `torch.no_grad()` and is outside the optimizer.
+- Added cosine-distance drift regularization between current predicted CLIP tokens and frozen-anchor predicted CLIP tokens. The loss is added only when `use_prior_preservation=True` and `prior_preservation_weight > 0`.
+- Added compact per-epoch prior logging: weight, raw loss, scaled loss, anchor/current representation norms, cosine-to-anchor, `training_only=True`, `shared1000_or_new_test_used=False`, and `test_sources_used=[]`.
+- Added Slurm scripts: `/src/cycle40_prior_smoke.slurm`, `/src/cycle40_prior_train_s57.slurm`, and `/src/cycle40_prior_eval_s57.slurm`.
+- The training scripts use compute-visible `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` and include a compute-side grep preflight for `use_prior_preservation` to fail fast if scratch-visible `Train.py` is stale.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/Train.py` passed after the implementation and after the compact logging patch.
+- `bash -n /src/cycle40_prior_smoke.slurm /src/cycle40_prior_train_s57.slurm /src/cycle40_prior_eval_s57.slurm` passed.
+- Interactive `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src` remains not stat-visible from this shell, but the Slurm smoke logs confirmed compute-side execution used the updated prior-preservation code.
+
+Smoke jobs:
+- Initial smoke `sbatch /src/cycle40_prior_smoke.slurm` -> `9239257_[0-1]`, subject 7, one A100, `64G`, `01:00:00`, node `della-l09g7`, completed `0:0`, elapsed `00:07:09`.
+  - `9239257_0` / `cycle40_smoke_subj07_prior0_1sess_3ep`: batch MaxRSS `21944904K`, stdout `/src/slurms/c40_prior_smoke_9239257_0.out`, stderr `/src/slurms/c40_prior_smoke_9239257_0.err`.
+  - `9239257_1` / `cycle40_smoke_subj07_prior_low_1sess_3ep`: batch MaxRSS `21522152K`, stdout `/src/slurms/c40_prior_smoke_9239257_1.out`, stderr `/src/slurms/c40_prior_smoke_9239257_1.err`.
+  - This run completed operationally, but the required prior diagnostics were not visible because the tqdm postfix truncated the long metric dictionary. It was treated as an operational validation and superseded by the formal smoke below after adding compact logging.
+- Formal smoke rerun `sbatch /src/cycle40_prior_smoke.slurm` -> `9239526_[0-1]`, subject 7, one A100, `64G`, `01:00:00`, node `della-l09g7`, completed `0:0`, elapsed `00:05:57`.
+  - `9239526_0` / `cycle40_smoke_subj07_prior0_1sess_3ep`: batch MaxRSS `21445140K`, stdout `/src/slurms/c40_prior_smoke_9239526_0.out`, stderr `/src/slurms/c40_prior_smoke_9239526_0.err`.
+  - `9239526_1` / `cycle40_smoke_subj07_prior_low_1sess_3ep`: batch MaxRSS `21898208K`, stdout `/src/slurms/c40_prior_smoke_9239526_1.out`, stderr `/src/slurms/c40_prior_smoke_9239526_1.err`.
+  - Both rows loaded `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/train_logs/final_multisubject_subj07/last.pth` and saved checkpoints under `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle40_smoke_subj07_prior{0,_low}_1sess_3ep/last.pth`.
+  - Final smoke standard diagnostics:
+    - `prior0`: test loss `13.4`, test blurry PixCorr `0.196`, test fwd/bwd retrieval `0.427/0.267`, train blurry PixCorr `0.286`, train bwd retrieval `0.966`.
+    - `prior_low`: test loss `13.4`, test blurry PixCorr `0.197`, test fwd/bwd retrieval `0.423/0.260`, train blurry PixCorr `0.286`, train bwd retrieval `0.966`.
+  - Prior-preservation diagnostics:
+    - `prior0` epoch 0/1/2 raw loss `0.119311/0.544825/0.711930`; scaled loss exactly `0/0/0`; anchor norms `232.926/232.909/232.950`; current norms `241.215/336.819/408.361`; cosine `0.880689/0.455175/0.288070`.
+    - `prior_low` epoch 0/1/2 raw loss `0.119034/0.535596/0.678878`; scaled loss `0.005952/0.026780/0.033944`; anchor norms `232.926/232.909/232.950`; current norms `241.180/335.491/402.103`; cosine `0.880966/0.464404/0.321122`.
+  - Smoke decision: passed. Both rows completed; `prior0` scaled preservation loss was exactly zero; `prior_low` preservation loss was finite and low relative to total test loss; no shape/device/dtype errors occurred; MaxRSS stayed below 30 GB; standard test loss, blurry PixCorr, and fwd/bwd retrieval were finite and close between rows.
+
+Full jobs launched:
+- Submitted full training array: `sbatch /src/cycle40_prior_train_s57.slurm` -> `9239769_[0-3]`, one A100, `64G`, `04:30:00`.
+  - `9239769_0`: `cycle40_subj05_prior0_1sess_150ep`
+  - `9239769_1`: `cycle40_subj05_prior_low_1sess_150ep`
+  - `9239769_2`: `cycle40_subj07_prior0_1sess_150ep`
+  - `9239769_3`: `cycle40_subj07_prior_low_1sess_150ep`
+  - At write time the array was `PENDING`, elapsed `00:00:00`, no node assigned, stdout/stderr `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/slurms/%x_%A_%a.out/.err`.
+- Submitted dependent enhanced-evaluator array: `sbatch --dependency=afterok:9239769 /src/cycle40_prior_eval_s57.slurm` -> `9239770_[0-3]`, one A100, `64G`, `04:00:00`.
+  - At write time the evaluator array was `PENDING (Dependency)`, elapsed `00:00:00`, no node assigned.
+  - Evaluation path remains unchanged: `recon_inference.py -> enhanced_recon_inference.py -> final_evaluations.py` with `--all_recons_path=evals/<model_name>/<model_name>_all_enhancedrecons.pt`.
+
+Expected artifacts:
+- Checkpoints: `/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/train_logs/cycle40_subj0{5,7}_prior{0,_low}_1sess_150ep/last.pth`.
+- Enhanced tensors: `/src/evals/cycle40_subj0{5,7}_prior{0,_low}_1sess_150ep/cycle40_subj0{5,7}_prior{0,_low}_1sess_150ep_all_enhancedrecons.pt`.
+- Final CSVs: `/src/tables/cycle40_subj0{5,7}_prior{0,_low}_1sess_150ep_all_enhancedrecons.csv`.
+
+Current status and next steps:
+- The prior-preservation implementation and smoke gate are complete.
+- Full protected subject 5/7 training and dependent enhanced evaluation are not yet completed. Immediately after the entry above was drafted, `9239769_0` and `9239769_1` started on `della-l04g8` and `della-l04g7` respectively; `9239769_2` and `9239769_3` remained pending for priority, and `9239770_[0-3]` remained pending on dependency.
+- Next cycle should inspect `9239769` and `9239770`, parse logs/artifacts, and only then compute the required final metric table and same-subject deltas.
