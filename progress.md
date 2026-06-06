@@ -3469,3 +3469,72 @@ Conclusion:
 Recommended next research questions:
 - What training-only brain-side reliability or subject-specific repeatability diagnostic can explain weak-subject BrainRet fragility without touching held-out evaluator labels?
 - Can one-session MindEye2 be instrumented to predict per-image BrainRet failure risk from training repeats or voxel reliability while preserving the full protected evaluator gate?
+
+## 2026-06-06 Cycle 47
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Built a diagnostic-only readout for Cycle 44 weak-subject BrainRet fragility.
+- No Slurm training, no evaluator relaunch, no checkpoint writes, no edits to `Train.py` or `models.py`, and no new model branch were launched.
+- Subjects 5 and 7 were kept separate throughout.
+
+Preflight:
+- `/job-status.md` was not visible in this workspace; `squeue -u "$USER" -h` returned no active jobs.
+- Cycle 46 final protected metrics and rank/margin diagnostics were present in `/progress.md`.
+- Cycle 44 artifacts were present for all four primary rows:
+  - `/src/evals/<model>/<model>_all_clipvoxels.pt`
+  - `/src/evals/<model>/<model>_all_recons.pt`
+  - `/src/evals/<model>/<model>_all_enhancedrecons.pt`
+  - `/src/tables/<model>_all_enhancedrecons.csv`
+  - `/src/tables/cycle44_rank_margin_diagnostics/*`
+
+Code/config changes:
+- Added `/src/cycle47_reliability_diagnostics.py`.
+- The script is read-only with respect to checkpoints/evaluator artifacts and writes only compact outputs under `/src/tables/cycle47_reliability_diagnostics/`.
+- It combines existing Cycle 44 per-image rank/margin deltas, recomputed ImageRet full-pool ranks from saved `all_clipvoxels`, existing train-repeat beta reliability summaries, and leakage-free CLIP ambiguity proxies.
+
+Commands:
+- `/src/fmri/bin/python -m py_compile /src/cycle47_reliability_diagnostics.py`
+- `/src/fmri/bin/python -u /src/cycle47_reliability_diagnostics.py --data_path=/src --outdir=/src/tables/cycle47_reliability_diagnostics`
+
+Outputs:
+- `/src/tables/cycle47_reliability_diagnostics/cycle47_reliability_diagnostics_summary.json`
+- `/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_reliability_diagnostics.csv`
+- `/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_correlations.csv`
+- `/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_reliability_diagnostics.csv`
+- `/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_correlations.csv`
+
+Leakage/provenance checks:
+- Reliability source: `/src/reliability/trainrepeat_reliability_summary.json`, provenance `split_half_train_repeat_behav_col0_image_id_col5_beta_idx_wds_train0_only`.
+- Reliability overlap checks were zero for both subjects: train/new-test, train/old-test, repeated-train/new-test, and repeated-train/old-test.
+- Training CLIP distribution stats came from `/src/tables/cycle30_subj05_clip_train_stats.pt` and `/src/tables/cycle30_subj07_clip_train_stats.pt`, both marked `training_only=true`.
+- Image ambiguity used saved evaluator image OpenCLIP features for unlabeled image-content crowding plus training-only CLIP mean/covariance distance. Held-out/new-test labels were not used for reliability, training CLIP stats, or image ambiguity fields.
+
+Replay authentication:
+
+| subject | CSV BrainRet delta | Cycle 44 replay sampled top-1 delta | replay minus CSV | tolerance |
+|---|---:|---:|---:|---|
+| subj05 | -0.009556 | -0.010222 | -0.000667 | pass |
+| subj07 | -0.005556 | -0.005444 | +0.000111 | pass |
+
+Training-only reliability summaries:
+
+| subject | repeated train images | repeat trials | global reliability mean | early mean | higher mean |
+|---|---:|---:|---:|---:|---:|
+| subj05 | 123 | 275 | 0.221351 | 0.275172 | 0.200341 |
+| subj07 | 123 | 275 | 0.171797 | 0.257655 | 0.142201 |
+
+Subject-separated findings:
+- Subject 5 retained the Cycle 44 negative denominator: BrainRet `-0.009556`, ImageRet `+0.008222`, CLIP `+0.004959`, VC `-0.003557`, HigherVis `-0.002646`. Per-image rank/margin deltas had 52 rank1-to-not1 and 52 not1-to-rank1 transitions. Training-CLIP Mahalanobis high quartile had worse mean BrainRet full-pool rank delta than the low quartile (`+0.720` vs `-1.396`) and a slightly higher rank1-to-not1 rate (`0.060` vs `0.048`), but correlations were weak: strongest relevant Spearman magnitudes were about `0.09` or lower.
+- Subject 7 retained the Cycle 44 negative denominator: BrainRet `-0.005556`, ImageRet `+0.006667`, CLIP `+0.002926`, VC `-0.003528`, HigherVis `-0.004325`. Per-image rank/margin deltas had 52 rank1-to-not1 and 49 not1-to-rank1 transitions. High eval-image CLIP density had worse mean BrainRet full-pool rank delta than low density (`+1.100` vs `-1.168`) and slightly higher rank1-to-not1 rate (`0.056` vs `0.048`), but correlations were again weak: strongest relevant Spearman magnitudes were about `0.08` or lower.
+- Stress subsets where ImageRet rank was preserved or improved while BrainRet full-pool rank worsened contained 174 / 1000 images for subject 5 and 172 / 1000 images for subject 7. Their mean ambiguity values were not enough to establish a strong explanatory signal.
+
+Conclusion:
+- Cycle 47 succeeds as an authenticated diagnostic table.
+- The training-only repeat reliability summaries clearly show subject 7 is less reliable than subject 5, especially in higher visual voxels, but the per-image ambiguity/reliability interaction signals are weak and inconsistent.
+- This is a negative/ambiguous diagnostic for a reliability-aware training branch. Do not propose a reliability-weighted objective yet.
+
+Recommended next research questions:
+- Use another artifact-only localization question before any new objective: for example, decompose the 52 rank1-to-not1 transitions by evaluator-side teacher-neighbor identity overlap and predicted-feature movement direction, without changing training.
+- If richer training-image embeddings become available as compact artifacts, repeat this analysis with true training-nearest-neighbor density rather than the current training mean/covariance proxy.

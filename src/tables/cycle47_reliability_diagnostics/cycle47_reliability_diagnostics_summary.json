@@ -1,0 +1,531 @@
+{
+  "provenance": {
+    "cycle": 47,
+    "scope": "read-only post-hoc diagnostic; no training, evaluator relaunch, checkpoint write, or model edit",
+    "data_path": "/src",
+    "outdir": "/src/tables/cycle47_reliability_diagnostics",
+    "teacher_cache": "/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt",
+    "reliability_source": "/src/reliability/trainrepeat_reliability_summary.json",
+    "training_clip_stats_source": "/src/tables/cycle30_subj0{5,7}_clip_train_stats.pt",
+    "heldout_or_newtest_labels_used_for_reliability": false,
+    "heldout_or_newtest_labels_used_for_train_clip_stats": false,
+    "heldout_or_newtest_labels_used_for_image_ambiguity": false,
+    "image_ambiguity_note": "Uses saved evaluator image OpenCLIP features for unlabeled image-content crowding plus training-only CLIP mean/covariance distance."
+  },
+  "preflight": {
+    "scheduler": {
+      "job_status": {
+        "path": "/job-status.md",
+        "exists": false,
+        "note": "No /job-status.md was visible; authenticated scheduler with squeue."
+      },
+      "active_job_count": 0,
+      "active_jobs": [],
+      "squeue_returncode": 0,
+      "squeue_stderr": ""
+    },
+    "artifacts": {
+      "subj05_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj05_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj07_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj07_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj05_rank_margin_delta_csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv",
+        "exists": true
+      },
+      "subj07_rank_margin_delta_csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv",
+        "exists": true
+      }
+    },
+    "missing": []
+  },
+  "subjects": [
+    {
+      "subject": 5,
+      "output_csv": "/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_reliability_diagnostics.csv",
+      "correlation_csv": "/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_correlations.csv",
+      "reliability_summary_path": "/src/reliability/trainrepeat_reliability_summary.json",
+      "reliability_method": "split_half_train_repeat_behav_col0_image_id_col5_beta_idx_wds_train0_only",
+      "reliability": {
+        "repeat_image_count": 123,
+        "repeat_trial_count": 275,
+        "train_row_count": 688,
+        "unique_train_image_count": 536,
+        "global_mean": 0.22135134041309357,
+        "early_mean": 0.27517229318618774,
+        "higher_mean": 0.2003406286239624,
+        "heldout_or_newtest_used": false,
+        "overlap_counts": {
+          "train_new_test": 0,
+          "train_old_test": 0,
+          "repeat_new_test": 0,
+          "repeat_old_test": 0
+        }
+      },
+      "train_clip_stats": {
+        "path": "/src/tables/cycle30_subj05_clip_train_stats.pt",
+        "training_only": true,
+        "count": 600,
+        "source": "/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj05/train/{0..0}.tar",
+        "heldout_or_newtest_labels_used": false
+      },
+      "image_rank_paths": {
+        "margin0": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+        "margin_low": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt"
+      },
+      "replay_check": {
+        "source": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json",
+        "csv_brainret_delta": -0.009555556376775076,
+        "replayed_sampled_top1_delta": -0.010222222222222133,
+        "replay_minus_csv": -0.0006666658454470564,
+        "within_0p002_tolerance": true
+      },
+      "metric_deltas": {
+        "BrainRet": -0.009555556376775076,
+        "ImageRet": 0.008222238222758027,
+        "CLIP": 0.004958958958958926,
+        "PixCorr": 0.00311180847105591,
+        "VC": -0.003557264804840088,
+        "HigherVis": -0.0026459395885468084
+      },
+      "rank_delta_means": {
+        "brain_full_pool": -0.424,
+        "image_full_pool": -0.026000000536441803,
+        "margin": -0.00020342677687750006,
+        "sampled_top1": -0.012559623709623711
+      },
+      "stress_summary": {
+        "image_rank_preserved_or_improved_brain_rank_worse_n": 174,
+        "total_n": 1000,
+        "mean_train_clip_diag_mahalanobis": 1.7376266717910767,
+        "mean_eval_clip_density_top10": 0.8224807381629944,
+        "rank1_to_not1_n": 52,
+        "not1_to_rank1_n": 52
+      },
+      "stratified": [
+        {
+          "covariate": "train_clip_diag_mahalanobis",
+          "q25": 1.7327021658420563,
+          "q75": 1.7407958507537842,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": -1.396,
+          "delta_full_pool_rank_high_mean": 0.72,
+          "delta_full_pool_rank_high_minus_low": 2.1159999999999997,
+          "rank1_to_not1_low_mean": 0.048,
+          "rank1_to_not1_high_mean": 0.06,
+          "rank1_to_not1_high_minus_low": 0.011999999999999997,
+          "delta_margin_low_mean": 0.00026112922994,
+          "delta_margin_high_mean": -0.00016499489566000006,
+          "delta_margin_high_minus_low": -0.0004261241256000001
+        },
+        {
+          "covariate": "eval_clip_density_top10",
+          "q25": 0.788391500711441,
+          "q75": 0.85665363073349,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": 0.68,
+          "delta_full_pool_rank_high_mean": -0.332,
+          "delta_full_pool_rank_high_minus_low": -1.012,
+          "rank1_to_not1_low_mean": 0.068,
+          "rank1_to_not1_high_mean": 0.056,
+          "rank1_to_not1_high_minus_low": -0.012000000000000004,
+          "delta_margin_low_mean": -0.0006709950974200001,
+          "delta_margin_high_mean": 0.00021626391226399995,
+          "delta_margin_high_minus_low": 0.0008872590096840001
+        },
+        {
+          "covariate": "low_reliability_x_train_mahalanobis",
+          "q25": 1.3491662442684174,
+          "q75": 1.355468362569809,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": -1.396,
+          "delta_full_pool_rank_high_mean": 0.72,
+          "delta_full_pool_rank_high_minus_low": 2.1159999999999997,
+          "rank1_to_not1_low_mean": 0.048,
+          "rank1_to_not1_high_mean": 0.06,
+          "rank1_to_not1_high_minus_low": 0.011999999999999997,
+          "delta_margin_low_mean": 0.00026112922994,
+          "delta_margin_high_mean": -0.00016499489566000006,
+          "delta_margin_high_minus_low": -0.0004261241256000001
+        }
+      ],
+      "strongest_correlations": [
+        {
+          "subject": 5,
+          "covariate": "eval_clip_nearest_neighbor_cosine",
+          "outcome": "delta_margin",
+          "pearson": 0.08498402083916584,
+          "spearman": 0.08857650907918856
+        },
+        {
+          "subject": 5,
+          "covariate": "eval_clip_density_top10",
+          "outcome": "delta_margin",
+          "pearson": 0.059849853926543524,
+          "spearman": 0.06904324504324505
+        },
+        {
+          "subject": 5,
+          "covariate": "low_reliability_x_eval_density_top10",
+          "outcome": "delta_margin",
+          "pearson": 0.05984983842129297,
+          "spearman": 0.06904324504324505
+        },
+        {
+          "subject": 5,
+          "covariate": "eval_clip_top1_top2_gap",
+          "outcome": "delta_margin",
+          "pearson": -0.02409091496780958,
+          "spearman": -0.05741913341913342
+        },
+        {
+          "subject": 5,
+          "covariate": "train_clip_mean_cosine",
+          "outcome": "delta_margin",
+          "pearson": -0.05510528288180621,
+          "spearman": -0.05089242304510032
+        },
+        {
+          "subject": 5,
+          "covariate": "eval_clip_nearest_neighbor_cosine",
+          "outcome": "delta_full_pool_rank",
+          "pearson": -0.04502131234109998,
+          "spearman": -0.048142390478347945
+        },
+        {
+          "subject": 5,
+          "covariate": "global_reliability_x_train_mahalanobis",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.034204677210288255,
+          "spearman": 0.043171820228728786
+        },
+        {
+          "subject": 5,
+          "covariate": "train_clip_diag_mahalanobis",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.034204833370373604,
+          "spearman": 0.04317016974106062
+        },
+        {
+          "subject": 5,
+          "covariate": "low_reliability_x_train_mahalanobis",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.034204481258946054,
+          "spearman": 0.043167102016943584
+        },
+        {
+          "subject": 5,
+          "covariate": "eval_clip_top1_top2_gap",
+          "outcome": "rank1_to_not1",
+          "pearson": 0.0310338452725111,
+          "spearman": 0.04101810436856195
+        },
+        {
+          "subject": 5,
+          "covariate": "train_clip_mean_abs_z",
+          "outcome": "delta_margin",
+          "pearson": -0.021631550044327458,
+          "spearman": -0.03765404633181917
+        },
+        {
+          "subject": 5,
+          "covariate": "train_clip_mean_abs_z",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.02487649413821291,
+          "spearman": 0.03754227782264161
+        }
+      ]
+    },
+    {
+      "subject": 7,
+      "output_csv": "/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_reliability_diagnostics.csv",
+      "correlation_csv": "/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_correlations.csv",
+      "reliability_summary_path": "/src/reliability/trainrepeat_reliability_summary.json",
+      "reliability_method": "split_half_train_repeat_behav_col0_image_id_col5_beta_idx_wds_train0_only",
+      "reliability": {
+        "repeat_image_count": 123,
+        "repeat_trial_count": 275,
+        "train_row_count": 688,
+        "unique_train_image_count": 536,
+        "global_mean": 0.17179743945598602,
+        "early_mean": 0.25765520334243774,
+        "higher_mean": 0.14220105111598969,
+        "heldout_or_newtest_used": false,
+        "overlap_counts": {
+          "train_new_test": 0,
+          "train_old_test": 0,
+          "repeat_new_test": 0,
+          "repeat_old_test": 0
+        }
+      },
+      "train_clip_stats": {
+        "path": "/src/tables/cycle30_subj07_clip_train_stats.pt",
+        "training_only": true,
+        "count": 600,
+        "source": "/scratch/gpfs/KNORMAN/aw1907/MindEyeV2/src/wds/subj07/train/{0..0}.tar",
+        "heldout_or_newtest_labels_used": false
+      },
+      "image_rank_paths": {
+        "margin0": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+        "margin_low": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt"
+      },
+      "replay_check": {
+        "source": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json",
+        "csv_brainret_delta": -0.005555557211240236,
+        "replayed_sampled_top1_delta": -0.005444444444444474,
+        "replay_minus_csv": 0.00011111276679576232,
+        "within_0p002_tolerance": true
+      },
+      "metric_deltas": {
+        "BrainRet": -0.005555557211240236,
+        "ImageRet": 0.006666666269302346,
+        "CLIP": 0.0029259259259258874,
+        "PixCorr": -0.004301186432634302,
+        "VC": -0.0035278797149658203,
+        "HigherVis": -0.0043253302574157715
+      },
+      "rank_delta_means": {
+        "brain_full_pool": -0.035,
+        "image_full_pool": 0.34299999475479126,
+        "margin": 0.000106126490842,
+        "sampled_top1": -0.003526522089022089
+      },
+      "stress_summary": {
+        "image_rank_preserved_or_improved_brain_rank_worse_n": 172,
+        "total_n": 1000,
+        "mean_train_clip_diag_mahalanobis": 1.6887483596801758,
+        "mean_eval_clip_density_top10": 0.8306448459625244,
+        "rank1_to_not1_n": 52,
+        "not1_to_rank1_n": 49
+      },
+      "stratified": [
+        {
+          "covariate": "train_clip_diag_mahalanobis",
+          "q25": 1.6850544214248657,
+          "q75": 1.692735344171524,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": -0.236,
+          "delta_full_pool_rank_high_mean": -0.776,
+          "delta_full_pool_rank_high_minus_low": -0.54,
+          "rank1_to_not1_low_mean": 0.048,
+          "rank1_to_not1_high_mean": 0.064,
+          "rank1_to_not1_high_minus_low": 0.016,
+          "delta_margin_low_mean": 3.9857041512000036e-05,
+          "delta_margin_high_mean": 0.00017450963429600002,
+          "delta_margin_high_minus_low": 0.00013465259278399997
+        },
+        {
+          "covariate": "eval_clip_density_top10",
+          "q25": 0.788391500711441,
+          "q75": 0.85665363073349,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": -1.168,
+          "delta_full_pool_rank_high_mean": 1.1,
+          "delta_full_pool_rank_high_minus_low": 2.268,
+          "rank1_to_not1_low_mean": 0.048,
+          "rank1_to_not1_high_mean": 0.056,
+          "rank1_to_not1_high_minus_low": 0.008,
+          "delta_margin_low_mean": 0.000704129854312,
+          "delta_margin_high_mean": -0.00015469810201600005,
+          "delta_margin_high_minus_low": -0.000858827956328
+        },
+        {
+          "covariate": "low_reliability_x_train_mahalanobis",
+          "q25": 1.395566314458847,
+          "q75": 1.4019277393817902,
+          "low_n": 250,
+          "high_n": 250,
+          "delta_full_pool_rank_low_mean": -0.236,
+          "delta_full_pool_rank_high_mean": -0.776,
+          "delta_full_pool_rank_high_minus_low": -0.54,
+          "rank1_to_not1_low_mean": 0.048,
+          "rank1_to_not1_high_mean": 0.064,
+          "rank1_to_not1_high_minus_low": 0.016,
+          "delta_margin_low_mean": 3.9857041512000036e-05,
+          "delta_margin_high_mean": 0.00017450963429600002,
+          "delta_margin_high_minus_low": 0.00013465259278399997
+        }
+      ],
+      "strongest_correlations": [
+        {
+          "subject": 7,
+          "covariate": "eval_clip_nearest_neighbor_cosine",
+          "outcome": "delta_margin",
+          "pearson": -0.07706332352471904,
+          "spearman": -0.07635594244282275
+        },
+        {
+          "subject": 7,
+          "covariate": "train_clip_max_abs_z",
+          "outcome": "delta_margin",
+          "pearson": 0.060953138298066215,
+          "spearman": 0.07433701478303688
+        },
+        {
+          "subject": 7,
+          "covariate": "train_clip_mean_abs_z",
+          "outcome": "delta_full_pool_rank",
+          "pearson": -0.03428079116773716,
+          "spearman": -0.06964034882154323
+        },
+        {
+          "subject": 7,
+          "covariate": "train_clip_max_abs_z",
+          "outcome": "delta_full_pool_rank",
+          "pearson": -0.025135320610820695,
+          "spearman": -0.06758774050086765
+        },
+        {
+          "subject": 7,
+          "covariate": "eval_clip_nearest_neighbor_cosine",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.02233728983031095,
+          "spearman": 0.06620373739879575
+        },
+        {
+          "subject": 7,
+          "covariate": "eval_clip_density_top10",
+          "outcome": "delta_margin",
+          "pearson": -0.0680855979850696,
+          "spearman": -0.0658933018933019
+        },
+        {
+          "subject": 7,
+          "covariate": "low_reliability_x_eval_density_top10",
+          "outcome": "delta_margin",
+          "pearson": -0.06808561952454464,
+          "spearman": -0.0658933018933019
+        },
+        {
+          "subject": 7,
+          "covariate": "eval_clip_density_top10",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.024270553964095633,
+          "spearman": 0.06030227899900146
+        },
+        {
+          "subject": 7,
+          "covariate": "low_reliability_x_eval_density_top10",
+          "outcome": "delta_full_pool_rank",
+          "pearson": 0.024270560339845614,
+          "spearman": 0.06030227899900146
+        },
+        {
+          "subject": 7,
+          "covariate": "train_clip_mean_abs_z",
+          "outcome": "delta_margin",
+          "pearson": 0.049811748156018104,
+          "spearman": 0.0502317995880582
+        },
+        {
+          "subject": 7,
+          "covariate": "train_clip_max_abs_z",
+          "outcome": "rank1_to_not1",
+          "pearson": -0.03153749670066024,
+          "spearman": -0.049474480689661926
+        },
+        {
+          "subject": 7,
+          "covariate": "low_reliability_x_train_mahalanobis",
+          "outcome": "delta_full_pool_rank",
+          "pearson": -0.018697323618331537,
+          "spearman": -0.033645504919896936
+        }
+      ]
+    }
+  ]
+}
