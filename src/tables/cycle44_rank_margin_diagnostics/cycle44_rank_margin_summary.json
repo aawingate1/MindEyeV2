@@ -1,0 +1,420 @@
+{
+  "provenance": {
+    "cycle": 44,
+    "scope": "read-only evaluator-side rank/margin diagnostics",
+    "data_path": "/src",
+    "outdir": "/src/tables/cycle44_rank_margin_diagnostics",
+    "teacher_cache": "/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt",
+    "seed": 42,
+    "eval_loops": 30,
+    "eval_sample_size": 300,
+    "no_training_or_model_behavior_change": true
+  },
+  "preflight": {
+    "scheduler": {
+      "job_status": {
+        "path": "/job-status.md",
+        "exists": false,
+        "note": "No /job-status.md was visible; authenticated scheduler with squeue."
+      },
+      "active_job_count": 0,
+      "active_jobs": [],
+      "squeue_returncode": 0
+    },
+    "missing": [],
+    "artifacts": {
+      "subj05_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_blurryrecons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_blurryrecons.pt",
+          "exists": true,
+          "size_bytes": 786433528
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj05_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_blurryrecons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_blurryrecons.pt",
+          "exists": true,
+          "size_bytes": 786433607
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj07_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_blurryrecons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_blurryrecons.pt",
+          "exists": true,
+          "size_bytes": 786433528
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      },
+      "subj07_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_blurryrecons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_blurryrecons.pt",
+          "exists": true,
+          "size_bytes": 786433607
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true
+        }
+      }
+    }
+  },
+  "replay_checks": [
+    {
+      "subject": 5,
+      "csv_brainret_delta": -0.009555556376775076,
+      "replayed_sampled_top1_delta": -0.010222222222222133,
+      "replay_minus_csv_delta": -0.0006666658454470564,
+      "within_0p002_tolerance": true
+    },
+    {
+      "subject": 7,
+      "csv_brainret_delta": -0.005555557211240236,
+      "replayed_sampled_top1_delta": -0.005444444444444474,
+      "replay_minus_csv_delta": 0.00011111276679576232,
+      "within_0p002_tolerance": true
+    }
+  ],
+  "delta_csvs": {
+    "subj05": "/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv",
+    "subj07": "/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv"
+  },
+  "subjects": [
+    {
+      "subject": 5,
+      "rows": {
+        "margin0": {
+          "subject": 5,
+          "row_label": "margin0",
+          "model_name": "cycle44_subj05_margin0_1sess_150ep",
+          "per_image_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin0_1sess_150ep_rank_margin.csv",
+          "provenance": {
+            "clipvoxel_path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+            "final_csv_path": "/src/tables/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.csv",
+            "image_id_source": "/src/tables/cycle41_prior_collapse_diagnostic/subj05_prior_low_vs_prior0_per_image.csv"
+          },
+          "final_csv_metric_values": {
+            "BrainRet": 0.5527777949968974,
+            "ImageRet": 0.6487777868906657,
+            "CLIP": 0.8405325325325326,
+            "InceptionV3": 0.8561971971971972,
+            "VC": 0.4163805544376373,
+            "HigherVis": 0.4236268997192383,
+            "EffNet-B": 0.768112503784359,
+            "SwAV": 0.4312120137197502
+          },
+          "brainret_rank_summary": {
+            "mean": 14.202,
+            "median": 2.0,
+            "top1_fraction": 0.399
+          },
+          "imageret_rank_summary": {
+            "mean": 9.714,
+            "median": 1.0,
+            "top1_fraction": 0.502
+          },
+          "full_pool_rank_mean": 14.20199966430664,
+          "full_pool_rank_median": 2.0,
+          "full_pool_top1_fraction": 0.399,
+          "sampled_rank_mean": 4.984539296242973,
+          "sampled_rank_median": 1.0,
+          "sampled_top1_success_mean": 0.5535657897657897,
+          "sampled_aggregate_top1": 0.5532222222222222,
+          "margin_mean": -0.003027687082067132,
+          "margin_median": -0.0031377971172332764,
+          "feature_spread": {
+            "feature_std_mean": 0.0008588017662987113,
+            "effective_rank": 385.38824462890625,
+            "offdiag_pred_cosine": 0.4800371825695038
+          }
+        },
+        "margin_low": {
+          "subject": 5,
+          "row_label": "margin_low",
+          "model_name": "cycle44_subj05_margin_low_1sess_150ep",
+          "per_image_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin_low_1sess_150ep_rank_margin.csv",
+          "provenance": {
+            "clipvoxel_path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt",
+            "final_csv_path": "/src/tables/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.csv",
+            "image_id_source": "/src/tables/cycle41_prior_collapse_diagnostic/subj05_prior_low_vs_prior0_per_image.csv"
+          },
+          "final_csv_metric_values": {
+            "BrainRet": 0.5432222386201223,
+            "ImageRet": 0.6570000251134237,
+            "CLIP": 0.8454914914914915,
+            "InceptionV3": 0.8605225225225226,
+            "VC": 0.4128232896327972,
+            "HigherVis": 0.4209809601306915,
+            "EffNet-B": 0.7708108362861699,
+            "SwAV": 0.4325608187428456
+          },
+          "brainret_rank_summary": {
+            "mean": 13.778,
+            "median": 2.0,
+            "top1_fraction": 0.399
+          },
+          "imageret_rank_summary": {
+            "mean": 9.688,
+            "median": 1.0,
+            "top1_fraction": 0.52
+          },
+          "full_pool_rank_mean": 13.777999877929688,
+          "full_pool_rank_median": 2.0,
+          "full_pool_top1_fraction": 0.399,
+          "sampled_rank_mean": 4.88205224734416,
+          "sampled_rank_median": 1.0,
+          "sampled_top1_success_mean": 0.5410061660561659,
+          "sampled_aggregate_top1": 0.543,
+          "margin_mean": -0.003231113776564598,
+          "margin_median": -0.0032130666077136993,
+          "feature_spread": {
+            "feature_std_mean": 0.0008482299745082855,
+            "effective_rank": 386.6238708496094,
+            "offdiag_pred_cosine": 0.4911542236804962
+          }
+        }
+      },
+      "control_delta": {
+        "subject": 5,
+        "row_label": "margin_low_vs_margin0",
+        "row_count": 1000,
+        "rank1_to_not1_count": 52,
+        "rank1_to_not1_fraction": 0.052,
+        "not1_to_rank1_count": 52,
+        "not1_to_rank1_fraction": 0.052,
+        "delta_positive_similarity": {
+          "mean": 0.0022060661860741674,
+          "median": 0.002031838521361351
+        },
+        "delta_hardest_impostor_similarity": {
+          "mean": 0.002409492963925004,
+          "median": 0.0024349186569452286
+        },
+        "delta_margin": {
+          "mean": -0.00020342677924782036,
+          "median": -0.0003091935068368912
+        },
+        "delta_full_pool_rank": {
+          "mean": -0.424,
+          "median": 0.0
+        },
+        "delta_sampled_top1_success_rate": {
+          "mean": -0.01255962370962371,
+          "median": 0.0
+        },
+        "correlations": {
+          "sampled_success_delta_vs_margin_delta": 0.47037013746284523,
+          "sampled_success_delta_vs_full_pool_rank_delta": -0.10236043531450331
+        }
+      },
+      "control_delta_csv": "/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv"
+    },
+    {
+      "subject": 7,
+      "rows": {
+        "margin0": {
+          "subject": 7,
+          "row_label": "margin0",
+          "model_name": "cycle44_subj07_margin0_1sess_150ep",
+          "per_image_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin0_1sess_150ep_rank_margin.csv",
+          "provenance": {
+            "clipvoxel_path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+            "final_csv_path": "/src/tables/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.csv",
+            "image_id_source": "/src/tables/cycle41_prior_collapse_diagnostic/subj07_prior_low_vs_prior0_per_image.csv"
+          },
+          "final_csv_metric_values": {
+            "BrainRet": 0.5420000116030376,
+            "ImageRet": 0.6805555681387584,
+            "CLIP": 0.770977977977978,
+            "InceptionV3": 0.7850770770770771,
+            "VC": 0.321338415145874,
+            "HigherVis": 0.3069821894168854,
+            "EffNet-B": 0.8282496095131495,
+            "SwAV": 0.4778928326348328
+          },
+          "brainret_rank_summary": {
+            "mean": 20.197,
+            "median": 2.0,
+            "top1_fraction": 0.401
+          },
+          "imageret_rank_summary": {
+            "mean": 10.763,
+            "median": 1.0,
+            "top1_fraction": 0.548
+          },
+          "full_pool_rank_mean": 20.19700050354004,
+          "full_pool_rank_median": 2.0,
+          "full_pool_top1_fraction": 0.401,
+          "sampled_rank_mean": 6.777593065186448,
+          "sampled_rank_median": 1.0,
+          "sampled_top1_success_mean": 0.5422158438783439,
+          "sampled_aggregate_top1": 0.5418888888888889,
+          "margin_mean": -0.002853500423952937,
+          "margin_median": -0.0031623318791389465,
+          "feature_spread": {
+            "feature_std_mean": 0.0008130748174153268,
+            "effective_rank": 385.0904846191406,
+            "offdiag_pred_cosine": 0.5137816667556763
+          }
+        },
+        "margin_low": {
+          "subject": 7,
+          "row_label": "margin_low",
+          "model_name": "cycle44_subj07_margin_low_1sess_150ep",
+          "per_image_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin_low_1sess_150ep_rank_margin.csv",
+          "provenance": {
+            "clipvoxel_path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt",
+            "final_csv_path": "/src/tables/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.csv",
+            "image_id_source": "/src/tables/cycle41_prior_collapse_diagnostic/subj07_prior_low_vs_prior0_per_image.csv"
+          },
+          "final_csv_metric_values": {
+            "BrainRet": 0.5364444543917973,
+            "ImageRet": 0.6872222344080607,
+            "CLIP": 0.7739039039039038,
+            "InceptionV3": 0.7775695695695696,
+            "VC": 0.3178105354309082,
+            "HigherVis": 0.3026568591594696,
+            "EffNet-B": 0.8319743204022433,
+            "SwAV": 0.4816433222470102
+          },
+          "brainret_rank_summary": {
+            "mean": 20.162,
+            "median": 2.0,
+            "top1_fraction": 0.398
+          },
+          "imageret_rank_summary": {
+            "mean": 11.106,
+            "median": 1.0,
+            "top1_fraction": 0.545
+          },
+          "full_pool_rank_mean": 20.16200065612793,
+          "full_pool_rank_median": 2.0,
+          "full_pool_top1_fraction": 0.398,
+          "sampled_rank_mean": 6.785976895734985,
+          "sampled_rank_median": 1.0,
+          "sampled_top1_success_mean": 0.5386893217893217,
+          "sampled_aggregate_top1": 0.5364444444444444,
+          "margin_mean": -0.0027473741210997105,
+          "margin_median": -0.002744833007454872,
+          "feature_spread": {
+            "feature_std_mean": 0.0007987369317561388,
+            "effective_rank": 381.7218322753906,
+            "offdiag_pred_cosine": 0.529119610786438
+          }
+        }
+      },
+      "control_delta": {
+        "subject": 7,
+        "row_label": "margin_low_vs_margin0",
+        "row_count": 1000,
+        "rank1_to_not1_count": 52,
+        "rank1_to_not1_fraction": 0.052,
+        "not1_to_rank1_count": 49,
+        "not1_to_rank1_fraction": 0.049,
+        "delta_positive_similarity": {
+          "mean": -0.002009994273073971,
+          "median": -0.0019293054938316345
+        },
+        "delta_hardest_impostor_similarity": {
+          "mean": -0.002116120759397745,
+          "median": -0.0020984504371881485
+        },
+        "delta_margin": {
+          "mean": 0.00010612648725509644,
+          "median": 0.0002627875655889511
+        },
+        "delta_full_pool_rank": {
+          "mean": -0.035,
+          "median": 0.0
+        },
+        "delta_sampled_top1_success_rate": {
+          "mean": -0.003526522089022091,
+          "median": 0.0
+        },
+        "correlations": {
+          "sampled_success_delta_vs_margin_delta": 0.4437551185032179,
+          "sampled_success_delta_vs_full_pool_rank_delta": -0.088591582777585
+        }
+      },
+      "control_delta_csv": "/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv"
+    }
+  ]
+}

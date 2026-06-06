@@ -1,0 +1,22 @@
+{
+  "cycle44_subj07_margin_low_1sess_150ep": {
+    "feature_std_mean": 0.0007987369317561388,
+    "effective_rank": 381.7218322753906,
+    "offdiag_pred_cosine": 0.529119610786438
+  },
+  "cycle44_subj05_margin0_1sess_150ep": {
+    "feature_std_mean": 0.0008588017662987113,
+    "effective_rank": 385.38824462890625,
+    "offdiag_pred_cosine": 0.4800371825695038
+  },
+  "cycle44_subj05_margin_low_1sess_150ep": {
+    "feature_std_mean": 0.0008482299745082855,
+    "effective_rank": 386.6238708496094,
+    "offdiag_pred_cosine": 0.4911542236804962
+  },
+  "cycle44_subj07_margin0_1sess_150ep": {
+    "feature_std_mean": 0.0008130748174153268,
+    "effective_rank": 385.0904846191406,
+    "offdiag_pred_cosine": 0.5137816667556763
+  }
+}

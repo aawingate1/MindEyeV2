@@ -26,7 +26,9 @@ def feature_spread_summary(student):
     if n < 2:
         return OrderedDict(feature_std_mean=0.0, effective_rank=1.0, offdiag_pred_cosine=0.0)
     centered = student - student.mean(dim=0, keepdim=True)
-    singular_values = torch.linalg.svdvals(centered)
+    gram = centered @ centered.T
+    eigvals = torch.linalg.eigvalsh(gram).clamp_min(0)
+    singular_values = torch.sqrt(eigvals)
     singular_values = singular_values[singular_values > 1e-8]
     if int(singular_values.numel()) == 0:
         effective_rank = torch.tensor(1.0)
@@ -34,7 +36,7 @@ def feature_spread_summary(student):
         probs = singular_values / singular_values.sum().clamp_min(1e-12)
         effective_rank = torch.exp(-(probs * torch.log(probs.clamp_min(1e-12))).sum())
     sim = student @ student.T
-    offdiag = c43.offdiag_values(sim)
+    offdiag = sim[~torch.eye(n, dtype=torch.bool, device=sim.device)]
     return OrderedDict(
         feature_std_mean=float(student.std(dim=0, unbiased=False).mean().item()),
         effective_rank=float(effective_rank.item()),
@@ -53,6 +55,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval_loops", type=int, default=30)
     parser.add_argument("--eval_sample_size", type=int, default=300)
+    parser.add_argument("--skip_feature_spread", action="store_true")
     args = parser.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -74,13 +77,21 @@ def main():
         row_dfs = OrderedDict()
         row_summaries = OrderedDict()
         for label, model_name in ROWS[subject].items():
+            print(f"cycle44 diagnostics: subject {subject} row {label} start", flush=True)
             row_df, row_summary = c43.write_row(args, subject, label, model_name, teacher, ids, ids_source)
-            student, _ = c43.load_student(args.data_path, model_name)
-            row_summary["feature_spread"] = feature_spread_summary(student)
-            del student
+            print(f"cycle44 diagnostics: subject {subject} row {label} rank/margin row written", flush=True)
+            if args.skip_feature_spread:
+                row_summary["feature_spread"] = OrderedDict(skipped=True)
+            else:
+                student, _ = c43.load_student(args.data_path, model_name)
+                print(f"cycle44 diagnostics: subject {subject} row {label} feature spread start", flush=True)
+                row_summary["feature_spread"] = feature_spread_summary(student)
+                del student
+            print(f"cycle44 diagnostics: subject {subject} row {label} complete", flush=True)
             row_dfs[label] = row_df
             row_summaries[label] = row_summary
 
+        print(f"cycle44 diagnostics: subject {subject} delta summary start", flush=True)
         delta_df, delta_summary = c43.summarize_delta(subject, row_dfs["margin0"], row_dfs["margin_low"], None)
         delta_summary["row_label"] = "margin_low_vs_margin0"
         delta_path = os.path.join(args.outdir, f"subj{subject:02d}_margin_low_vs_margin0_rank_margin_delta.csv")

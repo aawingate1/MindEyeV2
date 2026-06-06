@@ -252,9 +252,13 @@ def load_optional_pixcorr_deltas(data_path, subject):
 
 def write_row(args, subject, label, model_name, teacher, ids, ids_source):
     csv_metrics, csv_path = load_final_csv(args.data_path, model_name)
+    print(f"rank-margin diagnostics: loading student {model_name}", flush=True)
     student, clipvoxel_path = load_student(args.data_path, model_name)
+    print(f"rank-margin diagnostics: full-pool BrainRet {model_name}", flush=True)
     full = full_pool_brainret(student, teacher)
+    print(f"rank-margin diagnostics: sampled BrainRet {model_name}", flush=True)
     sampled = sampled_brainret(student, teacher, args.seed, args.eval_loops, args.eval_sample_size)
+    print(f"rank-margin diagnostics: full-pool ImageRet {model_name}", flush=True)
     image_rank = full_pool_imageret(student, teacher)
 
     df = pd.DataFrame(

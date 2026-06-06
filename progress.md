@@ -3363,3 +3363,109 @@ Recommended next research questions:
 - Do the four Cycle 44 evaluator rows start and finish under the 4-hour request?
 - Do `margin_low - margin0` refined BrainRet/ImageRet and visual metrics improve, preserve, or regress separately for subject 5 and subject 7?
 - Does the evaluator-side rank/margin replay match final CSV BrainRet within the established `~0.002` tolerance?
+
+## 2026-06-06 Cycle 46
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Completed the Cycle 44 subject 5/7 evaluator readout and rank/margin replay.
+- No training, no evaluator relaunch, no new model branch, no subject 1/2 scale-up, and no margin-weight grid was launched.
+
+Preflight and evaluator job authentication:
+- `/job-status.md` was not visible in this workspace; scheduler state was authenticated with `squeue`, which showed no active jobs.
+- `9271345_[0-3]` all completed with exit `0:0`.
+
+| task | model | state | exit | elapsed | node | MaxRSS | stdout | stderr |
+|---|---|---:|---:|---:|---|---:|---|---|
+| `9271345_0` | `cycle44_subj05_margin0_1sess_150ep` | `COMPLETED` | `0:0` | `02:27:20` | `della-l05g3` | `49609720K` | `/src/slurms/c44_margin_eval_s57_9271345_0.out` | `/src/slurms/c44_margin_eval_s57_9271345_0.err` |
+| `9271345_1` | `cycle44_subj05_margin_low_1sess_150ep` | `COMPLETED` | `0:0` | `02:27:44` | `della-l03g11` | `49475200K` | `/src/slurms/c44_margin_eval_s57_9271345_1.out` | `/src/slurms/c44_margin_eval_s57_9271345_1.err` |
+| `9271345_2` | `cycle44_subj07_margin0_1sess_150ep` | `COMPLETED` | `0:0` | `02:23:07` | `della-l05g3` | `46254336K` | `/src/slurms/c44_margin_eval_s57_9271345_2.out` | `/src/slurms/c44_margin_eval_s57_9271345_2.err` |
+| `9271345_3` | `cycle44_subj07_margin_low_1sess_150ep` | `COMPLETED` | `0:0` | `02:26:00` | `della-l05g6` | `49525988K` | `/src/slurms/c44_margin_eval_s57_9271345_3.out` | `/src/slurms/c44_margin_eval_s57_9271345_3.err` |
+
+Evaluator log authentication:
+- Grep over all four stdout/stderr files found no `Traceback`, `RuntimeError`, CUDA OOM, killed process, missing file, or NaN evidence.
+- Each stdout explicitly recorded `all_recons_path: evals/<model>/<model>_all_enhancedrecons.pt` before `final_evaluations.py` printed the final metric table.
+- The logs reported enhanced tensor shape `torch.Size([1000, 3, 256, 256])`; direct artifact loading confirmed finite `torch.float32` tensors with actual shape `(1000, 3, 256, 256)` for all four rows. This differs from the plan text's expected `(1000, 3, 512, 512)`, but all evaluator jobs consumed the saved enhanced tensors successfully.
+
+Artifact authentication:
+- Enhanced tensors exist and are finite:
+  - `/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.pt`
+  - `/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.pt`
+- Final CSVs exist under `/src/tables/` for all four rows.
+
+Code/config changes:
+- Added flush-only progress prints to `/src/cycle43_rank_margin_diagnostics.py` and `/src/cycle44_rank_margin_diagnostics.py` because the original replay path was silent during long CPU matrix products.
+- Fixed two Cycle 44 diagnostic-script operational issues:
+  - Replaced the large `torch.linalg.svdvals(centered)` feature-spread computation with the equivalent Gram-matrix eigenvalue path on `centered @ centered.T`.
+  - Replaced the nonexistent `c43.offdiag_values(...)` call with direct off-diagonal masking.
+- Added `--skip_feature_spread` to `/src/cycle44_rank_margin_diagnostics.py` so rank/margin replay and feature-spread readout could be run in separate short processes. This did not change model artifacts, evaluator metrics, rank/margin formulas, seed, sample size, or training behavior.
+
+Commands and validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle43_rank_margin_diagnostics.py /src/cycle44_rank_margin_diagnostics.py`
+- `/src/fmri/bin/python -u /src/cycle44_rank_margin_diagnostics.py --data_path=/src --outdir=/src/tables/cycle44_rank_margin_diagnostics_s7 --subjects 7 --skip_feature_spread`
+- `/src/fmri/bin/python -u /src/cycle44_rank_margin_diagnostics.py --data_path=/src --outdir=/src/tables/cycle44_rank_margin_diagnostics_s5 --subjects 5 --skip_feature_spread`
+- Four separate one-row feature-spread Python processes wrote compact JSONs under `/src/tables/cycle44_rank_margin_diagnostics/feature_spread_rows/`.
+- Merged final compact outputs into `/src/tables/cycle44_rank_margin_diagnostics/` and removed temporary `_s5`/`_s7` directories.
+
+Final protected metric vector:
+
+| model | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet-B | SwAV | ImageRet | BrainRet | VC | V1 | V2 | V3 | V4 | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 `margin0` | 0.192674 | 0.406933 | 0.846794 | 0.916086 | 0.856197 | 0.840533 | 0.768113 | 0.431212 | 0.648778 | 0.552778 | 0.416381 | 0.351920 | 0.355988 | 0.341006 | 0.315086 | 0.423627 |
+| subj05 `margin_low` | 0.195786 | 0.414150 | 0.844991 | 0.920843 | 0.860523 | 0.845491 | 0.770811 | 0.432561 | 0.657000 | 0.543222 | 0.412823 | 0.346147 | 0.352018 | 0.333507 | 0.312330 | 0.420981 |
+| subj07 `margin0` | 0.194279 | 0.404695 | 0.829048 | 0.894047 | 0.785077 | 0.770978 | 0.828250 | 0.477893 | 0.680556 | 0.542000 | 0.321338 | 0.321689 | 0.324969 | 0.316007 | 0.281305 | 0.306982 |
+| subj07 `margin_low` | 0.189978 | 0.402765 | 0.821402 | 0.887852 | 0.777570 | 0.773904 | 0.831974 | 0.481643 | 0.687222 | 0.536444 | 0.317811 | 0.316086 | 0.318589 | 0.312224 | 0.276179 | 0.302657 |
+
+Same-subject protected deltas, `margin_low - margin0`:
+
+| subject | PixCorr | SSIM | AlexNet-2 | AlexNet-5 | Inception | CLIP | EffNet-B | SwAV | ImageRet | BrainRet | VC | HigherVis |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| subj05 | +0.003112 | +0.007216 | -0.001803 | +0.004757 | +0.004325 | +0.004959 | +0.002698 | +0.001349 | +0.008222 | -0.009556 | -0.003557 | -0.002646 |
+| subj07 | -0.004301 | -0.001930 | -0.007646 | -0.006195 | -0.007508 | +0.002926 | +0.003725 | +0.003750 | +0.006667 | -0.005556 | -0.003528 | -0.004325 |
+
+Rank/margin replay outputs:
+- `/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json`
+- `/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin0_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin_low_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin0_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin_low_1sess_150ep_rank_margin.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv`
+- `/src/tables/cycle44_rank_margin_diagnostics/feature_spread_summary.json`
+
+Replay agreement:
+
+| subject | CSV BrainRet delta | replayed sampled top-1 delta | replay minus CSV | tolerance |
+|---|---:|---:|---:|---|
+| subj05 | -0.009556 | -0.010222 | -0.000667 | pass, within 0.002 |
+| subj07 | -0.005556 | -0.005444 | +0.000111 | pass, within 0.002 |
+
+Rank/margin diagnostic readout:
+
+| subject | row | positive-minus-hardest margin mean | full-pool rank mean | sampled top-1 aggregate | feature std mean | effective rank | offdiag pred cosine |
+|---|---|---:|---:|---:|---:|---:|---:|
+| subj05 | `margin0` | -0.003028 | 14.202 | 0.553222 | 0.0008588 | 385.388 | 0.480037 |
+| subj05 | `margin_low` | -0.003231 | 13.778 | 0.543000 | 0.0008482 | 386.624 | 0.491154 |
+| subj07 | `margin0` | -0.002854 | 20.197 | 0.541889 | 0.0008131 | 385.090 | 0.513782 |
+| subj07 | `margin_low` | -0.002747 | 20.162 | 0.536444 | 0.0007987 | 381.722 | 0.529120 |
+
+Rank/margin deltas:
+
+| subject | delta margin mean | delta full-pool rank mean | delta sampled top-1 mean | rank1_to_not1 | not1_to_rank1 |
+|---|---:|---:|---:|---:|---:|
+| subj05 | -0.000203 | -0.424 | -0.012560 | 52 / 1000 | 52 / 1000 |
+| subj07 | +0.000106 | -0.035 | -0.003527 | 52 / 1000 | 49 / 1000 |
+
+Conclusion:
+- Cycle 44 `margin_low` does not pass the planned success gate. BrainRet does not improve by about `+0.02` in either weak subject; it decreases in both subjects versus the same-code same-subject `margin0`.
+- ImageRet improves modestly in both subjects, but this cannot rescue the branch because protected BrainRet is negative.
+- CLIP is preserved/improved, but Inception, VC, HigherVis, AlexNet, PixCorr, and lower-is-better EffNet-B/SwAV show small mixed or negative movements, especially for subject 7.
+- Mechanism diagnostics do not show a Cycle 40-style collapse, but they also do not support the hypothesis: subject 5 has a slightly worse positive-minus-hardest margin, both subjects have lower sampled top-1 aggregate under `margin_low`, feature std is lower in both, and off-diagonal predicted-feature cosine moves upward in both.
+- Close this conservative batch-local margin variant. Per `/plan.md`, do not run a margin grid, stronger margin loss, subject 1/2 scale-up, topology/sparse-neighbor/prior-anchor revival, adapters, routers/MoE, ROI routing, CLIP-layer fusion, generator/refiner edits, captions/VLM correction, temporal decoding, hard voxel pruning, or reliability-prior branch as the immediate next move.
+
+Recommended next research questions:
+- What training-only brain-side reliability or subject-specific repeatability diagnostic can explain weak-subject BrainRet fragility without touching held-out evaluator labels?
+- Can one-session MindEye2 be instrumented to predict per-image BrainRet failure risk from training repeats or voxel reliability while preserving the full protected evaluator gate?
