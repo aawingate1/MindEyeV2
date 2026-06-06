@@ -3538,3 +3538,91 @@ Conclusion:
 Recommended next research questions:
 - Use another artifact-only localization question before any new objective: for example, decompose the 52 rank1-to-not1 transitions by evaluator-side teacher-neighbor identity overlap and predicted-feature movement direction, without changing training.
 - If richer training-image embeddings become available as compact artifacts, repeat this analysis with true training-nearest-neighbor density rather than the current training mean/covariance proxy.
+
+## 2026-06-06 Cycle 48
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Built a diagnostic-only rank-transition identity readout for the completed Cycle 44 subject 5/7 `margin0` and `margin_low` rows.
+- No training jobs, evaluator relaunches, checkpoint writes, eval-directory writes, model branch, objective change, or edits to `Train.py` / `models.py` were performed.
+- A GPU diagnostic Slurm attempt was made only to compute missing reconstruction OpenCLIP features; it failed before script execution and produced no model/evaluator artifacts.
+
+Preflight:
+- `/job-status.md` was not visible in this workspace.
+- Bounded `squeue -u "$USER" -h` returned no active jobs before the local diagnostic run and no active jobs after the failed Slurm probes.
+- Required Cycle 44 artifacts were present for all four rows:
+  - `/src/evals/<model>/<model>_all_clipvoxels.pt`
+  - `/src/evals/<model>/<model>_all_recons.pt`
+  - `/src/evals/<model>/<model>_all_enhancedrecons.pt`
+  - `/src/tables/<model>_all_enhancedrecons.csv`
+  - `/src/tables/cycle44_rank_margin_diagnostics/*`
+  - `/src/tables/cycle47_reliability_diagnostics/*`
+- Cycle 44 replay agreement remained authenticated:
+  - subj05 CSV BrainRet delta `-0.009556`, replayed sampled top-1 delta `-0.010222`, replay-minus-CSV `-0.000667`, within `0.002`.
+  - subj07 CSV BrainRet delta `-0.005556`, replayed sampled top-1 delta `-0.005444`, replay-minus-CSV `+0.000111`, within `0.002`.
+
+Code/config changes:
+- Added `/src/cycle48_rank_transition_diagnostics.py`.
+  - The script reads saved Cycle 44/Cycle 47 artifacts and writes only compact outputs under `/src/tables/cycle48_rank_transition_diagnostics/`.
+  - It records source rows, teacher/cache provenance, held-out-label status, diagnostic-only status, and checkpoint/eval write status.
+  - It computes per-image transition classes, winning impostor identities, recovered ImageRet ranks, teacher-neighbor overlap, predicted brain-evaluator-space overlap, directional movement cosine, Cycle 47 stress flags, and impostor concentration.
+  - Reconstruction OpenCLIP feature computation is implemented as a CUDA-only path and does not cache large feature tensors unless explicitly requested.
+- Added `/src/cycle48_rank_transition_diag.slurm`, a one-hour diagnostic-only GPU wrapper. It was used only for the failed reconstruction-feature attempt.
+
+Commands:
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py`
+- `timeout 10s squeue -u "$USER" -h -o "%.18i %.40j %.8T %.10M %.9l"`
+- `/src/fmri/bin/python -u /src/cycle48_rank_transition_diagnostics.py --data_path=/src --outdir=/src/tables/cycle48_rank_transition_diagnostics --skip_recon_features`
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py`
+- `bash -n /src/cycle48_rank_transition_diag.slurm`
+- `sbatch /src/cycle48_rank_transition_diag.slurm`
+- Minimal Slurm path probe: `sbatch --job-name=c48_path_probe ... --wrap='echo HOST=$(hostname); ...'`
+- `sacct -j 9284846,9284881 --format=JobID,JobName%30,State,ExitCode,Elapsed,MaxRSS,NodeList -P`
+
+Diagnostic Slurm outcomes:
+- `9284846` (`c48_rank_transition`) failed immediately: `FAILED`, exit `0:53`, elapsed `00:00:01`, node `della-l09g7`; no stdout/stderr files were created at `/src/slurms/c48_rank_transition_9284846.*`.
+- `9284881` (`c48_path_probe`) also failed immediately: `FAILED`, exit `0:53`, elapsed `00:00:01`, node `della-l09g7`; no probe stdout was created.
+- Local CUDA was unavailable (`torch.cuda.is_available() == False`), so reconstruction/refiner OpenCLIP neighbor fields could not be completed in this cycle. The compact tables mark `enhanced_dir_cosine` blank/null and provenance marks reconstruction features as skipped. No further Slurm attempts were launched.
+
+Outputs:
+- `/src/tables/cycle48_rank_transition_diagnostics/cycle48_rank_transition_summary.json`
+- `/src/tables/cycle48_rank_transition_diagnostics/subj05_transition_table.csv`
+- `/src/tables/cycle48_rank_transition_diagnostics/subj07_transition_table.csv`
+- `/src/tables/cycle48_rank_transition_diagnostics/subj05_impostor_concentration.csv`
+- `/src/tables/cycle48_rank_transition_diagnostics/subj07_impostor_concentration.csv`
+
+Leakage/provenance:
+- Teacher feature source: `/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt`.
+- Predicted-feature sources: saved Cycle 44 `all_clipvoxels.pt` tensors.
+- Cycle 47 stress flags came from `/src/tables/cycle47_reliability_diagnostics/subj0{5,7}_cycle47_reliability_diagnostics.csv`.
+- Held-out labels were not used as training signals; all computations were post-hoc after protected Cycle 44 results.
+
+Subject-separated findings:
+- Subject 5:
+  - Transition counts: `rank1_to_not1=52`, `not1_to_rank1=52`, `rank1_kept=347`, `not1_kept=549`.
+  - Rank-loss winners were only moderate teacher neighbors: top-k overlap for `rank1_to_not1` was teacher `top1/top5/top10/top50 = 0.038/0.077/0.135/0.519`.
+  - Brain-evaluator predicted-space overlap for `rank1_to_not1` was `0.019/0.231/0.327/0.519`.
+  - Directional movement was weak: mean cosine from `pred_margin_low - pred_margin0` toward teacher impostor-minus-target was `+0.012`; toward predicted brain-space impostor-minus-target was `-0.068`.
+  - Rank-loss impostors were diffuse: `52` losses used `46` unique impostors; top-1/top-5/top-10 loss-impostor shares were `0.058/0.212/0.308`, Gini `0.105`.
+  - Cycle 47 stress subset size was `174`; stress rank-loss teacher top50 overlap was `0.561`, brain top50 `0.488`, with similarly weak concentration.
+  - Mechanism classification: `unstructured sparse-noise effects`, with the caveat that reconstruction/refiner spaces were blocked.
+- Subject 7:
+  - Transition counts: `rank1_to_not1=52`, `not1_to_rank1=49`, `rank1_kept=349`, `not1_kept=550`.
+  - Rank-loss winners were again only moderate teacher neighbors: teacher `top1/top5/top10/top50 = 0.038/0.077/0.154/0.500`.
+  - Brain-evaluator predicted-space overlap for `rank1_to_not1` was `0.096/0.192/0.269/0.577`.
+  - Directional movement was weak: mean cosine toward teacher impostor-minus-target was `+0.011`; toward predicted brain-space impostor-minus-target was `-0.091`.
+  - Loss impostors were somewhat more concentrated than subject 5 but still not a small stealing set: `52` losses used `40` unique impostors; top-1/top-5/top-10 loss-impostor shares were `0.077/0.269/0.423`, Gini `0.196`.
+  - Cycle 47 stress subset size was `172`; stress rank-loss teacher top50 overlap was `0.439`, brain top50 `0.610`.
+  - Mechanism classification: `unstructured sparse-noise effects`, with the caveat that reconstruction/refiner spaces were blocked.
+
+Conclusion:
+- Cycle 48 produced authenticated subject-separated transition and concentration tables for teacher and predicted brain-evaluator spaces.
+- The completed evidence does not support a coherent near-neighbor ambiguity mechanism, directional drift toward a recurring impostor set, or a small hard-impostor stealing pattern.
+- Reconstruction/refiner amplification remains unresolved because OpenCLIP reconstruction features could not be computed without a functioning GPU diagnostic job.
+- Do not escalate to a new weak-subject objective from this result. The immediate next valid step, if needed, is operational: restore a compute path that can run the Cycle 48 diagnostic script on GPU and fill only the reconstruction/refiner overlap fields, not launch training or evaluator reruns.
+
+Recommended next research questions:
+- Can the Slurm `0:53` batch-start failure be fixed for diagnostic-only GPU jobs without changing model artifacts?
+- Once GPU diagnostics are available, do unenhanced/enhanced reconstruction OpenCLIP neighbor overlaps materially change the classification, or does the result remain unstructured?
+- If reconstruction spaces also fail to explain the transitions, pause weak-subject objective development rather than launching new margin/topology/reliability variants.

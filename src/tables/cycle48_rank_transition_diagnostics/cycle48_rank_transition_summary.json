@@ -1,0 +1,1244 @@
+{
+  "provenance": {
+    "cycle": 48,
+    "scope": "diagnostic-only artifact analysis of Cycle 44 rank-1 transitions",
+    "source_rows": {
+      "5": {
+        "margin0": "cycle44_subj05_margin0_1sess_150ep",
+        "margin_low": "cycle44_subj05_margin_low_1sess_150ep"
+      },
+      "7": {
+        "margin0": "cycle44_subj07_margin0_1sess_150ep",
+        "margin_low": "cycle44_subj07_margin_low_1sess_150ep"
+      }
+    },
+    "data_path": "/src",
+    "outdir": "/src/tables/cycle48_rank_transition_diagnostics",
+    "teacher_feature_source": "/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt",
+    "heldout_labels_used": false,
+    "diagnostic_only_after_protected_results": true,
+    "no_training_launched": true,
+    "no_evaluator_relaunch": true,
+    "checkpoint_or_eval_dir_written": false
+  },
+  "preflight": {
+    "scheduler": {
+      "job_status": {
+        "path": "/job-status.md",
+        "exists": false,
+        "note": "No /job-status.md visible; authenticated scheduler with bounded squeue."
+      },
+      "active_job_count": 0,
+      "active_jobs": [],
+      "squeue_returncode": null,
+      "squeue_stderr": "squeue timed out after 20s; separate bounded preflight returned no active jobs."
+    },
+    "artifacts": {
+      "subj05_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true,
+          "size_bytes": 312
+        }
+      },
+      "subj05_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj05_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true,
+          "size_bytes": 311
+        }
+      },
+      "subj05_margin_low_vs_margin0_rank_margin_delta.csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv",
+        "exists": true
+      },
+      "cycle44_subj05_margin0_1sess_150ep_rank_margin.csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin0_1sess_150ep_rank_margin.csv",
+        "exists": true
+      },
+      "subj05_cycle47_reliability_diagnostics.csv": {
+        "path": "/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_reliability_diagnostics.csv",
+        "exists": true
+      },
+      "subj07_margin0": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin0_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969518
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433498
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433538
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true,
+          "size_bytes": 311
+        }
+      },
+      "subj07_margin_low": {
+        "eval_dir": "/src/evals/cycle44_subj07_margin_low_1sess_150ep",
+        "eval_dir_exists": true,
+        "all_clipvoxels": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt",
+          "exists": true,
+          "size_bytes": 851969533
+        },
+        "all_recons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_recons.pt",
+          "exists": true,
+          "size_bytes": 786433513
+        },
+        "all_enhancedrecons": {
+          "path": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.pt",
+          "exists": true,
+          "size_bytes": 786433617
+        },
+        "final_csv": {
+          "path": "/src/tables/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.csv",
+          "exists": true,
+          "size_bytes": 314
+        }
+      },
+      "subj07_margin_low_vs_margin0_rank_margin_delta.csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv",
+        "exists": true
+      },
+      "cycle44_subj07_margin0_1sess_150ep_rank_margin.csv": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin0_1sess_150ep_rank_margin.csv",
+        "exists": true
+      },
+      "subj07_cycle47_reliability_diagnostics.csv": {
+        "path": "/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_reliability_diagnostics.csv",
+        "exists": true
+      },
+      "cycle44_rank_margin_summary": {
+        "path": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json",
+        "exists": true
+      }
+    },
+    "missing": [],
+    "replay_checks": [
+      {
+        "subject": 5,
+        "source": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json",
+        "csv_brainret_delta": -0.009555556376775076,
+        "replayed_sampled_top1_delta": -0.010222222222222133,
+        "replay_minus_csv_delta": -0.0006666658454470564,
+        "within_0p002_tolerance": true
+      },
+      {
+        "subject": 7,
+        "source": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_rank_margin_summary.json",
+        "csv_brainret_delta": -0.005555557211240236,
+        "replayed_sampled_top1_delta": -0.005444444444444474,
+        "replay_minus_csv_delta": 0.00011111276679576232,
+        "within_0p002_tolerance": true
+      }
+    ]
+  },
+  "subjects": [
+    {
+      "subject": 5,
+      "transition_table": "/src/tables/cycle48_rank_transition_diagnostics/subj05_transition_table.csv",
+      "impostor_concentration_csv": "/src/tables/cycle48_rank_transition_diagnostics/subj05_impostor_concentration.csv",
+      "provenance": {
+        "source_rows": {
+          "margin0": "cycle44_subj05_margin0_1sess_150ep",
+          "margin_low": "cycle44_subj05_margin_low_1sess_150ep"
+        },
+        "delta_csv": "/src/tables/cycle44_rank_margin_diagnostics/subj05_margin_low_vs_margin0_rank_margin_delta.csv",
+        "control_rank_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj05_margin0_1sess_150ep_rank_margin.csv",
+        "cycle47_csv": "/src/tables/cycle47_reliability_diagnostics/subj05_cycle47_reliability_diagnostics.csv",
+        "teacher_feature_source": "/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt",
+        "margin0_clipvoxels": "/src/evals/cycle44_subj05_margin0_1sess_150ep/cycle44_subj05_margin0_1sess_150ep_all_clipvoxels.pt",
+        "margin_low_clipvoxels": "/src/evals/cycle44_subj05_margin_low_1sess_150ep/cycle44_subj05_margin_low_1sess_150ep_all_clipvoxels.pt",
+        "recon_feature_source": "skipped_by_argument",
+        "recon_feature_path": null,
+        "enhanced_feature_source": "skipped_by_argument",
+        "enhanced_feature_path": null,
+        "heldout_labels_used": false,
+        "diagnostic_only_after_protected_results": true,
+        "checkpoint_or_eval_dir_written": false
+      },
+      "metric_deltas": {
+        "BrainRet": -0.009555556376775076,
+        "ImageRet": 0.008222238222758027,
+        "CLIP": 0.004958958958958926,
+        "VC": -0.003557264804840088,
+        "HigherVis": -0.0026459395885468084,
+        "metric_csvs": {
+          "margin0": "/src/tables/cycle44_subj05_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "margin_low": "/src/tables/cycle44_subj05_margin_low_1sess_150ep_all_enhancedrecons.csv"
+        }
+      },
+      "transition_counts": {
+        "rank1_to_not1": 52,
+        "not1_to_rank1": 52,
+        "rank1_kept": 347,
+        "not1_kept": 549
+      },
+      "by_transition": {
+        "rank1_to_not1": {
+          "n": 52,
+          "delta_full_pool_rank": {
+            "n": 52,
+            "mean": 1.5,
+            "median": 1.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 52,
+            "mean": 0.5576923076923077,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 52,
+            "mean": 0.012229565038489034,
+            "median": 0.012617072090506554
+          },
+          "brain_eval_dir_cosine": {
+            "n": 52,
+            "mean": -0.0678997404488305,
+            "median": -0.07185884192585945
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.038461538461538464,
+          "teacher_winner_in_target_top5_rate": 0.07692307692307693,
+          "teacher_winner_in_target_top10_rate": 0.1346153846153846,
+          "teacher_winner_in_target_top50_rate": 0.5192307692307693,
+          "brain_eval_winner_in_target_top1_rate": 0.019230769230769232,
+          "brain_eval_winner_in_target_top5_rate": 0.23076923076923078,
+          "brain_eval_winner_in_target_top10_rate": 0.3269230769230769,
+          "brain_eval_winner_in_target_top50_rate": 0.5192307692307693,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "not1_to_rank1": {
+          "n": 52,
+          "delta_full_pool_rank": {
+            "n": 52,
+            "mean": -2.076923076923077,
+            "median": -1.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 52,
+            "mean": -0.8269230769230769,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 52,
+            "mean": -0.007495738360515903,
+            "median": -0.007852304261177778
+          },
+          "brain_eval_dir_cosine": {
+            "n": 52,
+            "mean": -0.0906691675235589,
+            "median": -0.09711939096450806
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.057692307692307696,
+          "teacher_winner_in_target_top5_rate": 0.19230769230769232,
+          "teacher_winner_in_target_top10_rate": 0.28846153846153844,
+          "teacher_winner_in_target_top50_rate": 0.6153846153846154,
+          "brain_eval_winner_in_target_top1_rate": 0.1346153846153846,
+          "brain_eval_winner_in_target_top5_rate": 0.28846153846153844,
+          "brain_eval_winner_in_target_top10_rate": 0.4423076923076923,
+          "brain_eval_winner_in_target_top50_rate": 0.7307692307692307,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "rank1_kept": {
+          "n": 347,
+          "delta_full_pool_rank": {
+            "n": 347,
+            "mean": 0.0,
+            "median": 0.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 347,
+            "mean": -0.07780979827089338,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 347,
+            "mean": 0.0031086645917416758,
+            "median": 0.0029151830822229385
+          },
+          "brain_eval_dir_cosine": {
+            "n": 347,
+            "mean": -0.07754774061796559,
+            "median": -0.074135422706604
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.06340057636887608,
+          "teacher_winner_in_target_top5_rate": 0.15273775216138327,
+          "teacher_winner_in_target_top10_rate": 0.24495677233429394,
+          "teacher_winner_in_target_top50_rate": 0.5187319884726225,
+          "brain_eval_winner_in_target_top1_rate": 0.06340057636887608,
+          "brain_eval_winner_in_target_top5_rate": 0.21613832853025935,
+          "brain_eval_winner_in_target_top10_rate": 0.3256484149855908,
+          "brain_eval_winner_in_target_top50_rate": 0.6628242074927954,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "not1_kept": {
+          "n": 549,
+          "delta_full_pool_rank": {
+            "n": 549,
+            "mean": -0.7176684881602914,
+            "median": 0.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 549,
+            "mean": 0.0273224043715847,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 549,
+            "mean": 0.0028755570551824124,
+            "median": 0.00292609678581357
+          },
+          "brain_eval_dir_cosine": {
+            "n": 549,
+            "mean": -0.08168859105516489,
+            "median": -0.08277831226587296
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.04007285974499089,
+          "teacher_winner_in_target_top5_rate": 0.10564663023679417,
+          "teacher_winner_in_target_top10_rate": 0.17304189435336975,
+          "teacher_winner_in_target_top50_rate": 0.4207650273224044,
+          "brain_eval_winner_in_target_top1_rate": 0.056466302367941715,
+          "brain_eval_winner_in_target_top5_rate": 0.18214936247723132,
+          "brain_eval_winner_in_target_top10_rate": 0.3132969034608379,
+          "brain_eval_winner_in_target_top50_rate": 0.6539162112932605,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        }
+      },
+      "all_impostor_concentration": {
+        "total": 1000,
+        "unique_impostors": 334,
+        "top1_share": 0.022,
+        "top5_share": 0.085,
+        "top10_share": 0.153,
+        "entropy": 5.404834168889515,
+        "gini": 0.4727544910179642
+      },
+      "rank1_to_not1_concentration": {
+        "total": 52,
+        "unique_impostors": 46,
+        "top1_share": 0.057692307692307696,
+        "top5_share": 0.21153846153846154,
+        "top10_share": 0.3076923076923077,
+        "entropy": 3.781224212610584,
+        "gini": 0.10451505016722407
+      },
+      "cycle47_stress_subset": {
+        "n": 174,
+        "by_transition": {
+          "rank1_to_not1": {
+            "n": 41,
+            "delta_full_pool_rank": {
+              "n": 41,
+              "mean": 1.4390243902439024,
+              "median": 1.0
+            },
+            "delta_image_full_pool_rank": {
+              "n": 41,
+              "mean": -0.4146341463414634,
+              "median": 0.0
+            },
+            "teacher_dir_cosine": {
+              "n": 41,
+              "mean": 0.01203099745552896,
+              "median": 0.012588792480528355
+            },
+            "brain_eval_dir_cosine": {
+              "n": 41,
+              "mean": -0.06679221290936012,
+              "median": -0.0718412697315216
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": 0.04878048780487805,
+            "teacher_winner_in_target_top5_rate": 0.0975609756097561,
+            "teacher_winner_in_target_top10_rate": 0.17073170731707318,
+            "teacher_winner_in_target_top50_rate": 0.5609756097560976,
+            "brain_eval_winner_in_target_top1_rate": 0.0,
+            "brain_eval_winner_in_target_top5_rate": 0.14634146341463414,
+            "brain_eval_winner_in_target_top10_rate": 0.2682926829268293,
+            "brain_eval_winner_in_target_top50_rate": 0.4878048780487805,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "not1_to_rank1": {
+            "n": 0,
+            "delta_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "delta_image_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "brain_eval_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": null,
+            "teacher_winner_in_target_top5_rate": null,
+            "teacher_winner_in_target_top10_rate": null,
+            "teacher_winner_in_target_top50_rate": null,
+            "brain_eval_winner_in_target_top1_rate": null,
+            "brain_eval_winner_in_target_top5_rate": null,
+            "brain_eval_winner_in_target_top10_rate": null,
+            "brain_eval_winner_in_target_top50_rate": null,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "rank1_kept": {
+            "n": 0,
+            "delta_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "delta_image_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "brain_eval_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": null,
+            "teacher_winner_in_target_top5_rate": null,
+            "teacher_winner_in_target_top10_rate": null,
+            "teacher_winner_in_target_top50_rate": null,
+            "brain_eval_winner_in_target_top1_rate": null,
+            "brain_eval_winner_in_target_top5_rate": null,
+            "brain_eval_winner_in_target_top10_rate": null,
+            "brain_eval_winner_in_target_top50_rate": null,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "not1_kept": {
+            "n": 133,
+            "delta_full_pool_rank": {
+              "n": 133,
+              "mean": 6.067669172932331,
+              "median": 3.0
+            },
+            "delta_image_full_pool_rank": {
+              "n": 133,
+              "mean": -2.1353383458646618,
+              "median": 0.0
+            },
+            "teacher_dir_cosine": {
+              "n": 133,
+              "mean": 0.0069087984299031615,
+              "median": 0.006479598581790924
+            },
+            "brain_eval_dir_cosine": {
+              "n": 133,
+              "mean": -0.07164451869946897,
+              "median": -0.07254834473133087
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": 0.03007518796992481,
+            "teacher_winner_in_target_top5_rate": 0.06766917293233082,
+            "teacher_winner_in_target_top10_rate": 0.13533834586466165,
+            "teacher_winner_in_target_top50_rate": 0.41353383458646614,
+            "brain_eval_winner_in_target_top1_rate": 0.06015037593984962,
+            "brain_eval_winner_in_target_top5_rate": 0.16541353383458646,
+            "brain_eval_winner_in_target_top10_rate": 0.3007518796992481,
+            "brain_eval_winner_in_target_top50_rate": 0.6165413533834586,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          }
+        },
+        "concentration": {
+          "total": 174,
+          "unique_impostors": 110,
+          "top1_share": 0.05172413793103448,
+          "top5_share": 0.1724137931034483,
+          "top10_share": 0.25862068965517243,
+          "entropy": 4.505034820970932,
+          "gini": 0.2888192267502614
+        }
+      },
+      "top_rank1_to_not1_impostors": [
+        {
+          "subject": 5,
+          "impostor_index": 590,
+          "count": 16,
+          "rank1_to_not1": 3,
+          "not1_to_rank1": 0,
+          "rank1_kept": 5,
+          "not1_kept": 8,
+          "target_indices": "28;74;245;297;310;312;330;419;496;552;573;610;611;665;688;922"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 680,
+          "count": 15,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 2,
+          "rank1_kept": 1,
+          "not1_kept": 10,
+          "target_indices": "26;124;194;317;472;500;563;596;624;802;810;840;911;942;968"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 828,
+          "count": 13,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 3,
+          "not1_kept": 8,
+          "target_indices": "4;15;60;199;212;230;511;692;826;842;926;996;999"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 426,
+          "count": 9,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 5,
+          "not1_kept": 2,
+          "target_indices": "11;148;378;479;526;539;649;787;903"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 551,
+          "count": 5,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 0,
+          "not1_kept": 3,
+          "target_indices": "236;455;592;872;957"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 493,
+          "count": 22,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 3,
+          "rank1_kept": 7,
+          "not1_kept": 11,
+          "target_indices": "3;18;24;39;130;168;302;374;385;426;483;686;704;707;709;720;735;766;895;950;972;983"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 827,
+          "count": 17,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 0,
+          "rank1_kept": 3,
+          "not1_kept": 13,
+          "target_indices": "58;67;137;214;249;293;393;489;568;660;690;702;738;779;894;902;963"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 48,
+          "count": 15,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 0,
+          "rank1_kept": 1,
+          "not1_kept": 13,
+          "target_indices": "92;216;286;407;488;494;502;605;725;727;741;759;808;890;976"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 468,
+          "count": 12,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 0,
+          "rank1_kept": 4,
+          "not1_kept": 7,
+          "target_indices": "50;155;191;320;347;589;612;714;776;823;893;937"
+        },
+        {
+          "subject": 5,
+          "impostor_index": 191,
+          "count": 11,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 0,
+          "rank1_kept": 3,
+          "not1_kept": 7,
+          "target_indices": "35;75;169;301;349;480;503;516;622;654;817"
+        }
+      ],
+      "mechanism_classification": "unstructured sparse-noise effects"
+    },
+    {
+      "subject": 7,
+      "transition_table": "/src/tables/cycle48_rank_transition_diagnostics/subj07_transition_table.csv",
+      "impostor_concentration_csv": "/src/tables/cycle48_rank_transition_diagnostics/subj07_impostor_concentration.csv",
+      "provenance": {
+        "source_rows": {
+          "margin0": "cycle44_subj07_margin0_1sess_150ep",
+          "margin_low": "cycle44_subj07_margin_low_1sess_150ep"
+        },
+        "delta_csv": "/src/tables/cycle44_rank_margin_diagnostics/subj07_margin_low_vs_margin0_rank_margin_delta.csv",
+        "control_rank_csv": "/src/tables/cycle44_rank_margin_diagnostics/cycle44_subj07_margin0_1sess_150ep_rank_margin.csv",
+        "cycle47_csv": "/src/tables/cycle47_reliability_diagnostics/subj07_cycle47_reliability_diagnostics.csv",
+        "teacher_feature_source": "/src/tables/cycle39_failure_decomposition/all_images_openclip_bigG_flat_norm.pt",
+        "margin0_clipvoxels": "/src/evals/cycle44_subj07_margin0_1sess_150ep/cycle44_subj07_margin0_1sess_150ep_all_clipvoxels.pt",
+        "margin_low_clipvoxels": "/src/evals/cycle44_subj07_margin_low_1sess_150ep/cycle44_subj07_margin_low_1sess_150ep_all_clipvoxels.pt",
+        "recon_feature_source": "skipped_by_argument",
+        "recon_feature_path": null,
+        "enhanced_feature_source": "skipped_by_argument",
+        "enhanced_feature_path": null,
+        "heldout_labels_used": false,
+        "diagnostic_only_after_protected_results": true,
+        "checkpoint_or_eval_dir_written": false
+      },
+      "metric_deltas": {
+        "BrainRet": -0.005555557211240236,
+        "ImageRet": 0.006666666269302346,
+        "CLIP": 0.0029259259259258874,
+        "VC": -0.0035278797149658203,
+        "HigherVis": -0.0043253302574157715,
+        "metric_csvs": {
+          "margin0": "/src/tables/cycle44_subj07_margin0_1sess_150ep_all_enhancedrecons.csv",
+          "margin_low": "/src/tables/cycle44_subj07_margin_low_1sess_150ep_all_enhancedrecons.csv"
+        }
+      },
+      "transition_counts": {
+        "rank1_to_not1": 52,
+        "not1_to_rank1": 49,
+        "rank1_kept": 349,
+        "not1_kept": 550
+      },
+      "by_transition": {
+        "rank1_to_not1": {
+          "n": 52,
+          "delta_full_pool_rank": {
+            "n": 52,
+            "mean": 1.6923076923076923,
+            "median": 1.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 52,
+            "mean": -0.11538461538461539,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 52,
+            "mean": 0.011476397469568137,
+            "median": 0.011014704126864672
+          },
+          "brain_eval_dir_cosine": {
+            "n": 52,
+            "mean": -0.09145269015481552,
+            "median": -0.09835315123200417
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.038461538461538464,
+          "teacher_winner_in_target_top5_rate": 0.07692307692307693,
+          "teacher_winner_in_target_top10_rate": 0.15384615384615385,
+          "teacher_winner_in_target_top50_rate": 0.5,
+          "brain_eval_winner_in_target_top1_rate": 0.09615384615384616,
+          "brain_eval_winner_in_target_top5_rate": 0.19230769230769232,
+          "brain_eval_winner_in_target_top10_rate": 0.2692307692307692,
+          "brain_eval_winner_in_target_top50_rate": 0.5769230769230769,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "not1_to_rank1": {
+          "n": 49,
+          "delta_full_pool_rank": {
+            "n": 49,
+            "mean": -1.9591836734693877,
+            "median": -1.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 49,
+            "mean": -0.04081632653061224,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 49,
+            "mean": -0.00611605101778191,
+            "median": -0.0070144981145858765
+          },
+          "brain_eval_dir_cosine": {
+            "n": 49,
+            "mean": -0.09882265666727813,
+            "median": -0.11242414265871048
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.061224489795918366,
+          "teacher_winner_in_target_top5_rate": 0.12244897959183673,
+          "teacher_winner_in_target_top10_rate": 0.20408163265306123,
+          "teacher_winner_in_target_top50_rate": 0.4489795918367347,
+          "brain_eval_winner_in_target_top1_rate": 0.08163265306122448,
+          "brain_eval_winner_in_target_top5_rate": 0.12244897959183673,
+          "brain_eval_winner_in_target_top10_rate": 0.20408163265306123,
+          "brain_eval_winner_in_target_top50_rate": 0.4897959183673469,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "rank1_kept": {
+          "n": 349,
+          "delta_full_pool_rank": {
+            "n": 349,
+            "mean": 0.0,
+            "median": 0.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 349,
+            "mean": 0.09169054441260745,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 349,
+            "mean": 0.002708705914142424,
+            "median": 0.0023580461274832487
+          },
+          "brain_eval_dir_cosine": {
+            "n": 349,
+            "mean": -0.08497327651340184,
+            "median": -0.08338777720928192
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.04011461318051576,
+          "teacher_winner_in_target_top5_rate": 0.15472779369627507,
+          "teacher_winner_in_target_top10_rate": 0.23209169054441262,
+          "teacher_winner_in_target_top50_rate": 0.4498567335243553,
+          "brain_eval_winner_in_target_top1_rate": 0.08882521489971347,
+          "brain_eval_winner_in_target_top5_rate": 0.23782234957020057,
+          "brain_eval_winner_in_target_top10_rate": 0.31805157593123207,
+          "brain_eval_winner_in_target_top50_rate": 0.6475644699140402,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        },
+        "not1_kept": {
+          "n": 550,
+          "delta_full_pool_rank": {
+            "n": 550,
+            "mean": -0.04909090909090909,
+            "median": 0.0
+          },
+          "delta_image_full_pool_rank": {
+            "n": 550,
+            "mean": 0.58,
+            "median": 0.0
+          },
+          "teacher_dir_cosine": {
+            "n": 550,
+            "mean": 0.0024309888806733813,
+            "median": 0.0019388445653021336
+          },
+          "brain_eval_dir_cosine": {
+            "n": 550,
+            "mean": -0.09593360176997852,
+            "median": -0.0968753919005394
+          },
+          "enhanced_dir_cosine": {
+            "n": 0,
+            "mean": null,
+            "median": null
+          },
+          "teacher_winner_in_target_top1_rate": 0.023636363636363636,
+          "teacher_winner_in_target_top5_rate": 0.08363636363636363,
+          "teacher_winner_in_target_top10_rate": 0.14909090909090908,
+          "teacher_winner_in_target_top50_rate": 0.3527272727272727,
+          "brain_eval_winner_in_target_top1_rate": 0.04727272727272727,
+          "brain_eval_winner_in_target_top5_rate": 0.15636363636363637,
+          "brain_eval_winner_in_target_top10_rate": 0.23272727272727273,
+          "brain_eval_winner_in_target_top50_rate": 0.5436363636363636,
+          "recon_winner_in_target_top1_rate": null,
+          "recon_winner_in_target_top5_rate": null,
+          "recon_winner_in_target_top10_rate": null,
+          "recon_winner_in_target_top50_rate": null,
+          "enhanced_winner_in_target_top1_rate": null,
+          "enhanced_winner_in_target_top5_rate": null,
+          "enhanced_winner_in_target_top10_rate": null,
+          "enhanced_winner_in_target_top50_rate": null
+        }
+      },
+      "all_impostor_concentration": {
+        "total": 1000,
+        "unique_impostors": 320,
+        "top1_share": 0.065,
+        "top5_share": 0.157,
+        "top10_share": 0.227,
+        "entropy": 5.209577159794966,
+        "gini": 0.51208125
+      },
+      "rank1_to_not1_concentration": {
+        "total": 52,
+        "unique_impostors": 40,
+        "top1_share": 0.07692307692307693,
+        "top5_share": 0.2692307692307692,
+        "top10_share": 0.4230769230769231,
+        "entropy": 3.5780106213568414,
+        "gini": 0.19615384615384635
+      },
+      "cycle47_stress_subset": {
+        "n": 172,
+        "by_transition": {
+          "rank1_to_not1": {
+            "n": 41,
+            "delta_full_pool_rank": {
+              "n": 41,
+              "mean": 1.829268292682927,
+              "median": 1.0
+            },
+            "delta_image_full_pool_rank": {
+              "n": 41,
+              "mean": -0.8536585365853658,
+              "median": 0.0
+            },
+            "teacher_dir_cosine": {
+              "n": 41,
+              "mean": 0.011395000852644444,
+              "median": 0.009755938313901424
+            },
+            "brain_eval_dir_cosine": {
+              "n": 41,
+              "mean": -0.08923709069991984,
+              "median": -0.09466568380594254
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": 0.04878048780487805,
+            "teacher_winner_in_target_top5_rate": 0.07317073170731707,
+            "teacher_winner_in_target_top10_rate": 0.14634146341463414,
+            "teacher_winner_in_target_top50_rate": 0.43902439024390244,
+            "brain_eval_winner_in_target_top1_rate": 0.0975609756097561,
+            "brain_eval_winner_in_target_top5_rate": 0.21951219512195122,
+            "brain_eval_winner_in_target_top10_rate": 0.3170731707317073,
+            "brain_eval_winner_in_target_top50_rate": 0.6097560975609756,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "not1_to_rank1": {
+            "n": 0,
+            "delta_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "delta_image_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "brain_eval_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": null,
+            "teacher_winner_in_target_top5_rate": null,
+            "teacher_winner_in_target_top10_rate": null,
+            "teacher_winner_in_target_top50_rate": null,
+            "brain_eval_winner_in_target_top1_rate": null,
+            "brain_eval_winner_in_target_top5_rate": null,
+            "brain_eval_winner_in_target_top10_rate": null,
+            "brain_eval_winner_in_target_top50_rate": null,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "rank1_kept": {
+            "n": 0,
+            "delta_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "delta_image_full_pool_rank": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "brain_eval_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": null,
+            "teacher_winner_in_target_top5_rate": null,
+            "teacher_winner_in_target_top10_rate": null,
+            "teacher_winner_in_target_top50_rate": null,
+            "brain_eval_winner_in_target_top1_rate": null,
+            "brain_eval_winner_in_target_top5_rate": null,
+            "brain_eval_winner_in_target_top10_rate": null,
+            "brain_eval_winner_in_target_top50_rate": null,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          },
+          "not1_kept": {
+            "n": 131,
+            "delta_full_pool_rank": {
+              "n": 131,
+              "mean": 10.0,
+              "median": 3.0
+            },
+            "delta_image_full_pool_rank": {
+              "n": 131,
+              "mean": -3.183206106870229,
+              "median": 0.0
+            },
+            "teacher_dir_cosine": {
+              "n": 131,
+              "mean": 0.006551153720125471,
+              "median": 0.006890659220516682
+            },
+            "brain_eval_dir_cosine": {
+              "n": 131,
+              "mean": -0.09394133868245123,
+              "median": -0.09835052490234375
+            },
+            "enhanced_dir_cosine": {
+              "n": 0,
+              "mean": null,
+              "median": null
+            },
+            "teacher_winner_in_target_top1_rate": 0.015267175572519083,
+            "teacher_winner_in_target_top5_rate": 0.061068702290076333,
+            "teacher_winner_in_target_top10_rate": 0.12213740458015267,
+            "teacher_winner_in_target_top50_rate": 0.32061068702290074,
+            "brain_eval_winner_in_target_top1_rate": 0.03816793893129771,
+            "brain_eval_winner_in_target_top5_rate": 0.17557251908396945,
+            "brain_eval_winner_in_target_top10_rate": 0.2366412213740458,
+            "brain_eval_winner_in_target_top50_rate": 0.5572519083969466,
+            "recon_winner_in_target_top1_rate": null,
+            "recon_winner_in_target_top5_rate": null,
+            "recon_winner_in_target_top10_rate": null,
+            "recon_winner_in_target_top50_rate": null,
+            "enhanced_winner_in_target_top1_rate": null,
+            "enhanced_winner_in_target_top5_rate": null,
+            "enhanced_winner_in_target_top10_rate": null,
+            "enhanced_winner_in_target_top50_rate": null
+          }
+        },
+        "concentration": {
+          "total": 172,
+          "unique_impostors": 107,
+          "top1_share": 0.0872093023255814,
+          "top5_share": 0.19186046511627908,
+          "top10_share": 0.29651162790697677,
+          "entropy": 4.415671789642224,
+          "gini": 0.31199739187133235
+        }
+      },
+      "top_rank1_to_not1_impostors": [
+        {
+          "subject": 7,
+          "impostor_index": 567,
+          "count": 65,
+          "rank1_to_not1": 4,
+          "not1_to_rank1": 1,
+          "rank1_kept": 10,
+          "not1_kept": 50,
+          "target_indices": "7;51;116;117;134;184;189;191;267;274;292;301;320;323;326;327;365;373;411;424;431;436;454;469;471"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 886,
+          "count": 12,
+          "rank1_to_not1": 4,
+          "not1_to_rank1": 1,
+          "rank1_kept": 3,
+          "not1_kept": 4,
+          "target_indices": "214;236;393;502;546;648;702;739;855;893;977;998"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 967,
+          "count": 29,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 5,
+          "not1_kept": 22,
+          "target_indices": "21;29;100;158;218;220;228;277;287;305;364;416;465;492;529;561;584;587;612;613;678;765;785;806;816"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 208,
+          "count": 23,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 2,
+          "rank1_kept": 6,
+          "not1_kept": 13,
+          "target_indices": "33;44;55;91;94;167;169;172;213;352;354;372;379;486;494;506;547;550;679;772;791;864;974"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 990,
+          "count": 12,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 5,
+          "not1_kept": 5,
+          "target_indices": "151;161;371;380;555;682;689;690;788;814;853;892"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 200,
+          "count": 8,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 0,
+          "not1_kept": 6,
+          "target_indices": "74;168;234;539;675;754;832;834"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 137,
+          "count": 3,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 1,
+          "not1_kept": 0,
+          "target_indices": "230;512;662"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 899,
+          "count": 2,
+          "rank1_to_not1": 2,
+          "not1_to_rank1": 0,
+          "rank1_kept": 0,
+          "not1_kept": 0,
+          "target_indices": "350;972"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 178,
+          "count": 24,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 1,
+          "rank1_kept": 8,
+          "not1_kept": 14,
+          "target_indices": "50;88;160;182;260;280;362;388;426;467;631;633;644;691;708;737;777;786;835;848;896;923;951;981"
+        },
+        {
+          "subject": 7,
+          "impostor_index": 327,
+          "count": 16,
+          "rank1_to_not1": 1,
+          "not1_to_rank1": 0,
+          "rank1_kept": 8,
+          "not1_kept": 7,
+          "target_indices": "40;114;125;385;392;414;440;473;516;573;659;667;744;783;938;993"
+        }
+      ],
+      "mechanism_classification": "unstructured sparse-noise effects"
+    }
+  ]
+}
