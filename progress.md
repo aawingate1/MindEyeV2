@@ -3682,3 +3682,67 @@ Recommended next research questions:
 
 Telegram-ready update:
 Cycle 49 stayed diagnostic-only and did not change training/model/evaluator artifacts. The four Cycle 44 rows still have `all_clipvoxels`, `all_recons`, `all_enhancedrecons`, final CSVs, and Cycle 48 tables, but reconstruction/refiner OpenCLIP fields could not be completed. Minimal Slurm probe `9303410` and CPU control probe `9303426` both failed before the batch shell ran with exit `0:53` / `RaisedSignal:53(Real-time_signal_19)` and created no stdout/stderr, so this is a general batch-start blocker rather than a MindEye script failure. No new metrics or caches were written. Current mechanism classification remains unresolved for reconstruction/refiner space; teacher and predicted-feature evidence from Cycle 48 remains diffuse/unstructured for subjects 5 and 7.
+
+## 2026-06-06 Cycle 50
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Scope:
+- Followed the Cycle 50 operational gate only: preflight, syntax checks, and one minimal Slurm batch-start probe.
+- Did not launch training, relaunch the MindEye evaluator, run the reconstruction/refiner diagnostic, write checkpoints, edit `Train.py` or `models.py`, scale to subjects 1/2, or introduce a new objective.
+- No large tensors, checkpoints, model weights, reconstruction feature caches, or evaluator artifacts were created.
+
+Preflight:
+- `/job-status.md` is still not visible in this workspace (`No such file or directory`), consistent with recent cycles.
+- A bounded preflight `squeue -u "$USER" -h -o "%.18i %.40j %.8T %.10M %.9l %.20R"` returned no active jobs.
+- The four required Cycle 44 target rows still have the required saved artifacts:
+  - `/src/evals/cycle44_subj05_margin0_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj05_margin_low_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj07_margin0_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj07_margin_low_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/tables/cycle44_subj0{5,7}_margin{0,_low}_1sess_150ep_all_enhancedrecons.csv`
+- Existing diagnostic inputs remain present:
+  - `/src/tables/cycle44_rank_margin_diagnostics/*`
+  - `/src/tables/cycle47_reliability_diagnostics/*`
+  - `/src/tables/cycle48_rank_transition_diagnostics/*`
+  - `/src/cycle48_rank_transition_diagnostics.py`
+
+Code/config changes:
+- Added `/src/cycle50_slurm_probe.slurm`, a minimal one-GPU batch-start probe whose first batch-shell command is `echo "BATCH_SHELL_ENTERED"`.
+- The probe requests one GPU, `16G`, and `00:10:00`; it only prints hostname, working directory, user/id, date, stdout/stderr paths and visibility, `/src` and `/src/slurms` visibility, Python environment, CUDA availability/device count, and the existence of `/src/cycle48_rank_transition_diagnostics.py`.
+- No changes were made to `/src/cycle48_rank_transition_diagnostics.py`, `Train.py`, `models.py`, checkpoints, eval tensors, final CSVs, or prior diagnostic tables.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py` passed.
+- `bash -n /src/cycle49_slurm_probe.slurm` passed.
+- `bash -n /src/cycle50_slurm_probe.slurm` passed.
+
+Commands/jobs launched:
+- `timeout 15s squeue -u "$USER" -h -o "%.18i %.40j %.8T %.10M %.9l %.20R"`
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py`
+- `bash -n /src/cycle49_slurm_probe.slurm`
+- `bash -n /src/cycle50_slurm_probe.slurm`
+- `sbatch /src/cycle50_slurm_probe.slurm`
+  - Job `9303868` (`c50_slurm_probe`), requested one GPU, `16G`, `00:10:00`.
+  - Result from `sacct`: `FAILED`, exit `0:53`, elapsed `00:00:00`, node `della-l03g3`; batch step `CANCELLED`, extern step `COMPLETED`.
+  - `scontrol show job 9303868` reported `Reason=RaisedSignal:53(Real-time_signal_19)`, `Partition=gputest`, `QOS=gpu-test`, `WorkDir=/src`, `StdOut=/src/slurms/c50_slurm_probe_9303868.out`, and `StdErr=/src/slurms/c50_slurm_probe_9303868.err`.
+  - Expected stdout/stderr files `/src/slurms/c50_slurm_probe_9303868.out` and `/src/slurms/c50_slurm_probe_9303868.err` were not created.
+- A final bounded `squeue` poll timed out, so final active-job state is not independently authenticated beyond `sacct` showing job `9303868` terminal failed.
+
+Observed metrics/results:
+- No reconstruction/refiner OpenCLIP metrics were produced in Cycle 50.
+- No new compact reconstruction/refiner CSV/JSON outputs were written.
+- Prior Cycle 48 teacher and predicted-feature diagnostics remain the latest scientific readout:
+  - Subject 5: `rank1_to_not1=52`, `not1_to_rank1=52`, teacher top50 overlap `0.519`, brain-space top50 overlap `0.519`, movement toward teacher impostor `+0.012`, movement toward brain-space impostor `-0.068`, `46` unique loss impostors among `52` losses.
+  - Subject 7: `rank1_to_not1=52`, `not1_to_rank1=49`, teacher top50 overlap `0.500`, brain-space top50 overlap `0.577`, movement toward teacher impostor `+0.011`, movement toward brain-space impostor `-0.091`, `40` unique loss impostors among `52` losses.
+
+Conclusion:
+- Cycle 50 confirms the same operational failure mode as Cycles 48/49: Slurm jobs terminate before batch shell entry, with exit `0:53` / `RaisedSignal:53(Real-time_signal_19)` and no stdout/stderr despite the first command being an `echo`.
+- Because the batch shell did not start, the missing reconstruction/refiner OpenCLIP localization fields remain unresolved. Per `/plan.md`, the Cycle 48 diagnostic GPU job was not submitted.
+- The blocker is still classified as a general scheduler or batch-start environment failure, not a MindEye CUDA/script issue, artifact issue, or `/src/slurms` login-shell writability issue.
+- Current mechanism classification remains diffuse/unstructured in teacher and predicted brain-evaluator spaces, with reconstruction/refiner amplification unclassified due to the operational blocker.
+
+Recommended next research questions:
+- Escalate to cluster/account/prolog investigation for why new batch jobs fail before stdout/stderr creation with `RaisedSignal:53(Real-time_signal_19)`.
+- Once batch launch is restored, rerun only the minimal probe first; if it succeeds, run only the reconstruction-feature completion path of `/src/cycle48_rank_transition_diagnostics.py` for the same four Cycle 44 rows.
+- If reconstruction/refiner overlaps and movement cosines are also diffuse, pause weak-subject objective development and document the negative mechanism-search conclusion across Cycles 30, 36, 38, 40, 44, 47, 48, and 50.
