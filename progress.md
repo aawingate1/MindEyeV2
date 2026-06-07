@@ -4050,3 +4050,69 @@ Recommended next research questions:
 - Escalate to cluster/account/prolog/path/quota investigation for why batch jobs fail before stdout/stderr creation with exit `0:53` / `RaisedSignal:53(Real-time_signal_19)`.
 - Once batch launch is restored, rerun only the minimal probe first; if it succeeds, run only the reconstruction-feature completion path of `/src/cycle48_rank_transition_diagnostics.py` for the same four Cycle 44 rows.
 - Do not propose or launch new weak-subject objectives unless reconstruction/refiner artifact-side localization later shows coherent downstream amplification.
+
+## 2026-06-07 Cycle 56
+
+Plan source: executed `/plan.md` only. Telegram report is due.
+
+Scope:
+- Followed the Cycle 56 operational gate only: active-job check, mount/path visibility checks, Cycle 44 artifact visibility checks, diagnostic syntax check, one minimal Slurm batch-start probe submission attempt, and stop on operational failure.
+- Did not launch training, relaunch the full evaluator, run `/src/cycle48_rank_transition_diagnostics.py` on GPU, edit `Train.py` or `models.py`, scale to subjects 1/2, run a CPU-only substitute, or introduce a new objective.
+- No large tensors, checkpoints, model weights, reconstruction feature caches, evaluator artifacts, or Cycle 56 diagnostic tables were created.
+
+Preflight:
+- `/job-status.md` was not visible in this workspace, so active-job state was checked with direct bounded Slurm commands.
+- A bounded preflight `squeue -u "$USER" -h -o "%.18i %.40j %.8T %.10M %.9l %.20R"` returned no active jobs.
+- `sacct -u "$USER"` could not be used because this submission shell has `USER=355433`, and Slurm reports `Invalid user id: 355433`; `id -un` also cannot resolve a username for UID `355433`. An unfiltered `sacct --starttime now-2hours` showed only the prior Cycle 54 and Cycle 55 probe failures, with no Cycle 56 job recorded.
+- `/src`, `/src/slurms`, `/src/fmri/bin/python`, and `/src/cycle48_rank_transition_diagnostics.py` were visible from the submission shell.
+- The four required Cycle 44 target rows still have the required saved artifacts:
+  - `/src/evals/cycle44_subj05_margin0_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj05_margin_low_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj07_margin0_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/evals/cycle44_subj07_margin_low_1sess_150ep/*_{all_clipvoxels,all_recons,all_enhancedrecons}.pt`
+  - `/src/tables/cycle44_subj0{5,7}_margin{0,_low}_1sess_150ep_all_enhancedrecons.csv`
+- Existing compact diagnostic inputs remain present under:
+  - `/src/tables/cycle44_rank_margin_diagnostics/`
+  - `/src/tables/cycle47_reliability_diagnostics/`
+  - `/src/tables/cycle48_rank_transition_diagnostics/`
+  - `/src/cycle48_rank_transition_diagnostics.py`
+
+Code/config changes:
+- Added `/src/cycle56_slurm_probe.slurm`, a minimal one-GPU batch-start probe whose first batch-shell command is `echo "BATCH_SHELL_ENTERED"`.
+- The probe requests one GPU, `16G`, and `00:10:00`; it prints host, working directory, user/id, date, stdout/stderr paths, `/src` and `/src/slurms` visibility, quota/path hints, Python environment, CUDA availability/device count, and whether `/src/cycle48_rank_transition_diagnostics.py` exists.
+- No changes were made to `/src/cycle48_rank_transition_diagnostics.py`, `Train.py`, `models.py`, checkpoints, eval tensors, final CSVs, or prior diagnostic tables.
+
+Validation:
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py` passed.
+- `bash -n /src/cycle56_slurm_probe.slurm` passed.
+
+Commands/jobs launched:
+- `timeout 15s squeue -u "$USER" -h -o "%.18i %.40j %.8T %.10M %.9l %.20R"`
+- `/src/fmri/bin/python -m py_compile /src/cycle48_rank_transition_diagnostics.py`
+- `bash -n /src/cycle56_slurm_probe.slurm`
+- `sbatch /src/cycle56_slurm_probe.slurm`
+  - The `sbatch` client emitted `/usr/bin/id: cannot find name for user ID 355433` and `/usr/bin/id: cannot find name for group ID 30057`, then hung for more than one minute without printing a `Submitted batch job ...` line.
+  - The local hung submitter process was `sbatch /src/cycle56_slurm_probe.slurm` with PID `292`; it was killed after no job id was returned.
+  - Post-attempt `squeue` returned no active jobs.
+  - `sacct --starttime now-2hours ... | grep c56_slurm_probe` returned no Cycle 56 accounting row.
+  - No expected stdout/stderr files matching `/src/slurms/c56_slurm_probe_*` were present.
+
+Observed metrics/results:
+- No reconstruction/refiner OpenCLIP metrics were produced in Cycle 56.
+- No new compact reconstruction/refiner CSV/JSON outputs were written.
+- Prior Cycle 48 teacher and predicted-feature diagnostics remain the latest scientific readout:
+  - Subject 5: `rank1_to_not1=52`, `not1_to_rank1=52`, teacher top50 overlap `0.519`, brain-space top50 overlap `0.519`, movement toward teacher impostor `+0.012`, movement toward brain-space impostor `-0.068`, `46` unique loss impostors among `52` losses.
+  - Subject 7: `rank1_to_not1=52`, `not1_to_rank1=49`, teacher top50 overlap `0.500`, brain-space top50 overlap `0.577`, movement toward teacher impostor `+0.011`, movement toward brain-space impostor `-0.091`, `40` unique loss impostors among `52` losses.
+
+Conclusion:
+- Cycle 56 did not reach even the prior failed probe state: `sbatch` itself hung after UID/GID name-resolution warnings and returned no job id, with no Cycle 56 Slurm accounting row and no stdout/stderr files.
+- This extends the Cycle 48-55 operational blocker from batch-shell startup failure to submission/client or scheduler/account identity handling in this shell. It remains classified as a scheduler, account, prolog, identity, path, mount, quota, or startup failure, not a MindEye Python, CUDA, checkpoint, evaluator, artifact, or `/src` visibility issue.
+- Per the stop condition in `/plan.md`, `/src/cycle48_rank_transition_diagnostics.py` was not submitted after the failed probe attempt.
+
+Recommended next research questions:
+- Escalate to cluster/account support with both signatures: prior jobs failed before stdout/stderr with exit `0:53` / `RaisedSignal:53(Real-time_signal_19)`, and Cycle 56 `sbatch` now hangs after unresolved UID/GID warnings for UID `355433` and GID `30057`.
+- Once submission and batch launch are restored, rerun only the minimal probe first; if it succeeds and prints `BATCH_SHELL_ENTERED`, run only the reconstruction-feature completion path of `/src/cycle48_rank_transition_diagnostics.py` for the same four Cycle 44 rows.
+- Do not propose or launch new weak-subject objectives unless reconstruction/refiner artifact-side localization later shows coherent downstream amplification.
+
+Telegram-ready update:
+Cycle 56 remained blocked operationally. `/src`, `/src/slurms`, `/src/fmri/bin/python`, the Cycle 48 diagnostic script, all four Cycle 44 eval tensors, the enhanced-recon CSVs, and prior compact diagnostic tables are visible. The diagnostic script compiles and the new `/src/cycle56_slurm_probe.slurm` probe validates, with `BATCH_SHELL_ENTERED` as its first batch-shell command. However, `sbatch /src/cycle56_slurm_probe.slurm` hung for over a minute after UID/GID name-resolution warnings (`UID 355433`, `GID 30057`) and never returned a job id; no Cycle 56 accounting row, active job, or `/src/slurms/c56_slurm_probe_*` stdout/stderr appeared. The reconstruction/refiner localization diagnostic was not submitted. This should be escalated as a scheduler/account/identity/startup issue, extending the prior `0:53` / missing-stdout probe failures.
