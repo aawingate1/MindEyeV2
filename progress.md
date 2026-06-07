@@ -4167,3 +4167,42 @@ Recommended next research questions:
 - Escalate to cluster/account support with both signatures: Cycles 48-55 jobs failed before stdout/stderr with exit `0:53` / `RaisedSignal:53(Real-time_signal_19)`, and Cycles 56-57 show unresolved UID/GID identity handling for UID `355433` and GID `30057`.
 - Once username and group resolution are restored, rerun only the minimal batch-start probe first; if it returns a job id, creates stdout/stderr, prints `BATCH_SHELL_ENTERED`, and completes, then run only the pending reconstruction/refiner localization diagnostic for the four Cycle 44 rows.
 - Do not propose or launch new weak-subject objectives until the operational gate passes and the pending reconstruction/refiner localization fields are available.
+## 2026-06-07 Cycle 58
+
+Plan source: executed `/plan.md` only. Telegram report is not due.
+
+Code/config changes:
+- None. No edits were made to `Train.py`, `models.py`, diagnostic scripts, Slurm scripts, checkpoints, tensors, evaluator outputs, or Cycle 44/47/48 tables.
+
+Commands/checks run:
+- `/job-status.md` visibility check: not visible from the current `/workspace` shell.
+- `timeout 15s squeue -h -u "$USER" -o "%.18i %.40j %.8T %.10M %.9l %.20R"` returned successfully with no active rows (`squeue_rc=0`).
+- `timeout 20s sacct -u "$USER" --starttime now-24hours --format=JobID,JobName%40,State,ExitCode,Elapsed,MaxRSS -P --noheader` failed with `sacct: error: Invalid user id: 355433` (`sacct_user_rc=1`).
+- Identity checks:
+  - `id`: `uid=355433 gid=30057 groups=30057,65534(nobody)`
+  - `id -u`: `355433`
+  - `id -g`: `30057`
+  - `id -un`: failed with `id: cannot find name for user ID 355433`, then printed numeric `355433`
+  - `id -gn`: failed with `id: cannot find name for group ID 30057`, then printed numeric `30057`
+  - environment: `USER=355433 LOGNAME=355433 HOME=/workspace PWD=/workspace`
+  - `getent passwd "$(id -u)"`: no entry
+  - `getent group "$(id -g)"`: no entry
+- Because the named-user identity gate failed, only the allowed unfiltered accounting confirmation was run:
+  - `timeout 20s sacct --starttime now-24hours --format=JobID,JobName%40,State,ExitCode,Elapsed,MaxRSS -P --noheader`
+  - It returned prior probe evidence only: `9303410`/`9303426`/`9303868`/`9304270`/`9304678`/`9305117`/`9320779`/`9321108`, all failed probe-family jobs with top-level `FAILED|0:53` and batch rows `CANCELLED|0:53`.
+
+Observed state:
+- `/src` is visible in the current shell, but the plan required stopping immediately on unresolved username/group and rejected `sacct -u "$USER"`, so Cycle 44 artifact checks, Python compilation, Slurm probe creation, and diagnostic submission were not attempted.
+- No Slurm job was submitted in Cycle 58.
+- The pending reconstruction/refiner localization diagnostic did not run.
+
+Conclusions:
+- Cycle 58 remains blocked at the same operational identity/account gate as Cycle 57: UID `355433` and GID `30057` have no passwd/group resolution, `$USER` and `$LOGNAME` are numeric, and Slurm accounting rejects the numeric user in the user-scoped query.
+- The recent unfiltered accounting context still shows the earlier Cycle 49-55 `0:53` pre-shell probe failures and no newer successful probe or diagnostic evidence.
+- This is an infrastructure/NSS/LDAP/account/mount/submission-environment blocker, not a MindEye Python, CUDA, model-code, checkpoint, evaluator, or scientific-input result.
+- Explicitly, no new training, evaluator rerun, model-code edit, checkpoint edit, or objective branch was launched.
+
+Recommended next research questions:
+- Can the submit environment be repaired so UID `355433` and GID `30057` resolve through `id -un`, `id -gn`, `getent passwd`, and `getent group`?
+- Once identity resolution is repaired, does a minimal `BATCH_SHELL_ENTERED` Slurm probe complete and write stdout/stderr under `/src/slurms`?
+- Only after that probe succeeds, run the pending `/src/cycle48_rank_transition_diagnostics.py` reconstruction/refiner localization diagnostic for the four Cycle 44 weak-subject rows.
